@@ -1,23 +1,54 @@
-import { startAgent } from "./agent.js";
+import os from "node:os";
+import { createServer } from "./server.js";
+import { loadConfig, isConfigured } from "./config.js";
+import { createLLMProvider } from "./llm/index.js";
+import { createHeartbeat } from "./heartbeat.js";
+
+function getAddress(): string {
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      if (net.family === "IPv4" && !net.internal) return net.address;
+    }
+  }
+  return "localhost";
+}
 
 async function main() {
-  console.log("Starting CashClaw...");
+  const port = 3777;
+  const address = getAddress();
 
-  const server = await startAgent();
+  console.log("Betsy starting...");
+  console.log(`Open in browser: http://${address}:${port}`);
 
-  // Open browser
-  const url = "http://localhost:3777";
-  const { execFile: execFileCb } = await import("node:child_process");
-  const opener = process.platform === "darwin"
-    ? "open"
-    : process.platform === "win32"
-      ? "start"
-      : "xdg-open";
-  execFileCb(opener, [url], () => {});
+  // Load config — if none exists, start in setup/wizard mode
+  const config = isConfigured() ? loadConfig() : null;
+
+  const { server, wss } = createServer({ port });
+
+  // If already configured, start the engine + heartbeat
+  if (config) {
+    const llm = createLLMProvider(config.llm);
+    const heartbeat = createHeartbeat(config, llm);
+    heartbeat.start();
+  }
+
+  // Auto-open browser on local machine (skip on typical VPS/Linux servers)
+  if (os.platform() !== "linux") {
+    const { execFile: execFileCb } = await import("node:child_process");
+    const opener =
+      os.platform() === "darwin"
+        ? "open"
+        : os.platform() === "win32"
+          ? "start"
+          : "xdg-open";
+    execFileCb(opener, [`http://localhost:${port}`], () => {});
+  }
 
   // Graceful shutdown
   const shutdown = () => {
     console.log("\nShutting down...");
+    wss.close();
     server.close();
     process.exit(0);
   };
