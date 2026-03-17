@@ -1,0 +1,5 @@
+assets/
+src/
+test/
+*.config.ts
+tsconfig.json

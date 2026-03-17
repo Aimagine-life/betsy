@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.local
+.betsy/
+betsy.config.yaml
+data/
+*.log
+.DS_Store
+.claude/
