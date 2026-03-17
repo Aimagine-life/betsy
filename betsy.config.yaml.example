@@ -1,0 +1,38 @@
+agent:
+  name: Бетси
+  personality:
+    tone: friendly        # friendly|professional|casual|sassy
+    style: detailed       # concise|detailed|balanced
+    custom_instructions: |
+      Ты умная и весёлая помощница.
+
+security:
+  password_hash: ""       # генерируется визардом
+  tools:
+    shell: true
+    ssh: false
+    browser: true
+    npm_install: true
+
+llm:
+  provider: openrouter
+  api_key: YOUR_OPENROUTER_API_KEY
+  fast_model: google/gemini-2.5-flash
+  strong_model: anthropic/claude-sonnet-4
+
+channels:
+  browser:
+    enabled: true
+  telegram:
+    enabled: false
+    token: YOUR_TELEGRAM_BOT_TOKEN
+  max:
+    enabled: false
+
+plugins:
+  voice:
+    enabled: false
+  video:
+    enabled: false
+  selfies:
+    enabled: false

@@ -2,6 +2,9 @@ node_modules/
 dist/
 .env
 .env.local
-.cashclaw/
+.betsy/
+betsy.config.yaml
+data/
 *.log
 .DS_Store
+.claude/
