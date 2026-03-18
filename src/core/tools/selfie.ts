@@ -23,7 +23,7 @@ function buildPrompt(context: string, mode: "mirror" | "direct"): string {
 
 export interface SelfieToolConfig {
   falApiKey: string;
-  referencePhotoUrl: string;
+  referencePhotoUrl?: string;
 }
 
 export class SelfieTool implements Tool {
@@ -35,10 +35,15 @@ export class SelfieTool implements Tool {
     { name: "mode", type: "string", description: "Режим: mirror (зеркальное, full-body) или direct (close-up). Если не указан — определяется автоматически.", required: false },
   ];
 
-  private config: SelfieToolConfig;
+  readonly config: SelfieToolConfig;
 
   constructor(config: SelfieToolConfig) {
     this.config = config;
+  }
+
+  /** Set reference photo URL (e.g. from bot avatar at startup). */
+  setReferencePhoto(url: string): void {
+    this.config.referencePhotoUrl = url;
   }
 
   async execute(params: Record<string, unknown>): Promise<ToolResult> {

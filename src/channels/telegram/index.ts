@@ -17,6 +17,10 @@ export class TelegramChannel implements Channel {
   private bot: Bot | null = null;
   private handler: MessageHandler | null = null;
   private ownerChatId: number | null = null;
+  private _avatarUrl: string | null = null;
+
+  /** Bot avatar URL fetched at startup. */
+  get avatarUrl(): string | null { return this._avatarUrl; }
 
   async start(config: Record<string, string>): Promise<void> {
     this.bot = new Bot(config.token);
@@ -25,6 +29,19 @@ export class TelegramChannel implements Channel {
 
     if (!this.handler) {
       throw new Error("TelegramChannel: call onMessage() before start()");
+    }
+
+    // Fetch bot avatar for selfie reference
+    try {
+      const me = await this.bot.api.getMe();
+      const photos = await this.bot.api.getUserProfilePhotos(me.id, { limit: 1 });
+      if (photos.total_count > 0) {
+        const fileId = photos.photos[0][photos.photos[0].length - 1].file_id;
+        const file = await this.bot.api.getFile(fileId);
+        this._avatarUrl = `https://api.telegram.org/file/bot${config.token}/${file.file_path}`;
+      }
+    } catch {
+      // Non-critical — selfie will use config fallback
     }
 
     registerHandlers(this.bot, this.handler, this.ownerChatId);

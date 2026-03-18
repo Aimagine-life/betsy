@@ -81,10 +81,11 @@ async function main() {
   // Selfie tool — uses fal.ai key from selfies config, falls back to video config
   const selfiesConfig = config.selfies as Record<string, string> | undefined;
   const videoConfig = config.video as Record<string, string> | undefined;
-  tools.register(new SelfieTool({
+  const selfieTool = new SelfieTool({
     falApiKey: selfiesConfig?.fal_api_key ?? videoConfig?.fal_api_key ?? "",
-    referencePhotoUrl: selfiesConfig?.reference_photo_url ?? "",
-  }));
+    referencePhotoUrl: selfiesConfig?.reference_photo_url,
+  });
+  tools.register(selfieTool);
   console.log(`🔧 Зарегистрировано инструментов: ${tools.list().length}`);
 
   // Setup Engine with personality and tools
@@ -119,6 +120,11 @@ async function main() {
         token: config.telegram.token,
         owner_chat_id: config.telegram.owner_id?.toString() ?? "",
       });
+      // Use bot avatar as selfie reference if no explicit URL in config
+      if (telegram.avatarUrl && !selfieTool.config.referencePhotoUrl) {
+        selfieTool.setReferencePhoto(telegram.avatarUrl);
+        console.log("📸 Аватар бота загружен для селфи");
+      }
       console.log("✅ Telegram бот запущен");
     } catch (err) {
       console.error("❌ Telegram ошибка:", err instanceof Error ? err.message : err);
