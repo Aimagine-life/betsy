@@ -33,11 +33,12 @@ export function BrowserChat() {
 
       ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data as string) as { type: string; content: string };
+          const data = JSON.parse(event.data as string) as { type: string; content: string; mediaUrl?: string };
           if (data.type === "message") {
             setMessages((prev) => [...prev, {
               role: "assistant",
               content: data.content,
+              mediaUrl: data.mediaUrl,
               timestamp: Date.now(),
             }]);
           }
@@ -88,8 +89,8 @@ export function BrowserChat() {
 
     // HTTP fallback
     try {
-      const { reply } = await api.sendChat(msg);
-      setMessages((prev) => [...prev, { role: "assistant", content: reply, timestamp: Date.now() }]);
+      const { reply, mediaUrl } = await api.sendChat(msg);
+      setMessages((prev) => [...prev, { role: "assistant", content: reply, mediaUrl, timestamp: Date.now() }]);
     } catch (err) {
       setMessages((prev) => [...prev, {
         role: "assistant",
@@ -163,6 +164,14 @@ export function BrowserChat() {
                     ? "bg-zinc-800 text-zinc-200"
                     : "bg-zinc-900/80 border border-zinc-800/60"
                 }`}>
+                  {msg.mediaUrl && (
+                    <img
+                      src={msg.mediaUrl}
+                      alt="selfie"
+                      className="rounded-md max-w-full mb-2"
+                      loading="lazy"
+                    />
+                  )}
                   <div><MarkdownContent text={msg.content} /></div>
                   <p className="text-[10px] mt-2 text-zinc-700 tabular-nums font-mono">{formatTime(msg.timestamp)}</p>
                 </div>

@@ -151,6 +151,7 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: number;
+  mediaUrl?: string;
 }
 
 // --- API ---
@@ -170,7 +171,7 @@ export const api = {
   updateConfig: (updates: Partial<ConfigData>) =>
     post<{ ok: boolean }>("/api/config-update", updates),
   getChat: () => get<{ messages: ChatMessage[] }>("/api/chat"),
-  sendChat: (message: string) => post<{ reply: string }>("/api/chat", { message }),
+  sendChat: (message: string) => post<{ reply: string; mediaUrl?: string }>("/api/chat", { message }),
   clearChat: () => post<{ ok: boolean }>("/api/chat/clear"),
   getAgentInfo: () => get<{ agent: AgentInfo | null }>("/api/agent-info"),
   getWalletCached: () => get<WalletInfo>("/api/wallet"),
