@@ -266,7 +266,7 @@ if (response.usage && response.usage.promptTokens > contextBudget) {
 
 This ensures terminal-turn-heavy workloads don't grow from `contextBudget` to `MAX_PROMPT_TOKENS` without ever compacting. After background compaction completes, both `this.histories` and `this.summaries` are updated so the next message uses the compacted context and new summary. The default gap of 10k tokens (40k budget vs 50k hard stop) provides headroom while background compaction runs.
 
-**Race safety:** If a new message arrives while background compaction is running, `process()` uses the current in-memory history (pre-compaction, large but valid). When background compaction finishes and overwrites `this.histories`, the in-flight `process()` still holds a reference to the old array and continues working with it — messages pushed during that call exist only in the old array and in DB (via `saveMessage`). The next `process()` call will use the compacted array from `this.histories`, and those in-between messages will be missing from RAM (but present in DB). This RAM/DB divergence heals **only on process restart** (when `hydrateUser` reloads from DB for a fresh in-memory map) — NOT automatically during runtime, because `hydrateUser` is guarded by `has()` and won't re-hydrate an already-present key. This is acceptable for a single-user chatbot where restarts are frequent (deploys). At worst: one extra oversized LLM call and some messages visible only in DB until restart.
+**Race safety:** If a new message arrives while background compaction is running, `process()` uses the current in-memory history (pre-compaction, large but valid). When background compaction finishes and overwrites `this.histories`, the in-flight `process()` still holds a reference to the old array and continues working with it — messages pushed during that call exist only in the old array and in DB (via `saveMessage`). The next `process()` call will use the compacted array from `this.histories`, and those in-between messages will be missing from RAM (but present in DB). This RAM/DB divergence heals **only on process restart** (when `hydrateUser` reloads from DB for a fresh in-memory map) — NOT automatically during runtime, because `hydrateUser` is guarded by `has()` and won't re-hydrate an already-present key. Additionally, the `.then()` reload itself may be instantly stale if the in-flight `process()` is still saving messages via `saveMessage` after the reload completes. This is acceptable for a single-user chatbot where restarts are frequent (deploys). At worst: one extra oversized LLM call and some messages visible only in DB until restart.
 
 ### 4. Remove splice trimming (line 88-90)
 
@@ -308,12 +308,14 @@ Note: zod's `.default(40000)` would cover this at parse time even without the `n
        // Recreate with new schema (same as in db.exec block above)
        db.exec(`CREATE TABLE conversations (...new schema...)`);
      } else {
-       // Use db.transaction() for atomic migration (not raw BEGIN/COMMIT string)
+       // Use db.transaction() for atomic migration
+       // IMPORTANT: use db.prepare().run() inside transaction, NOT db.exec()
+       // (better-sqlite3 does not support db.exec() inside db.transaction() callbacks)
        db.transaction(() => {
-         db.exec("ALTER TABLE conversations ADD COLUMN user_id TEXT NOT NULL DEFAULT ''");
-         db.exec("ALTER TABLE conversations ADD COLUMN tool_call_id TEXT");
-         db.exec("ALTER TABLE conversations ADD COLUMN tool_calls TEXT");
-         db.exec("DELETE FROM conversations WHERE user_id = ''");
+         db.prepare("ALTER TABLE conversations ADD COLUMN user_id TEXT NOT NULL DEFAULT ''").run();
+         db.prepare("ALTER TABLE conversations ADD COLUMN tool_call_id TEXT").run();
+         db.prepare("ALTER TABLE conversations ADD COLUMN tool_calls TEXT").run();
+         db.prepare("DELETE FROM conversations WHERE user_id = ''").run();
        })();
      }
    }
@@ -364,11 +366,14 @@ On restart:
 - **First message ever:** No history in DB, no summary — works like today
 - **Restart with no history:** `loadHistory` returns empty messages + null summary — same as fresh start
 - **Compaction fails (LLM error):** Catch error in the engine's compaction block. Since `compactionAttempted = true` prevents retry, the engine continues with the current (oversized) history. The `MAX_PROMPT_TOKENS = 50_000` hard stop remains as a safety net — if the next LLM response still exceeds 50k tokens, the engine stops gracefully (existing behavior). DB transaction never starts on LLM failure, so no partial state.
-- **Tool messages without parent assistant:** `loadHistory` trims the window start forward to the first `role: "user"` message. This handles both directions: orphaned tool results without a parent assistant, and tool results at the window boundary whose parent was trimmed off by the limit. Guarantees a clean message sequence for the LLM.
+- **Orphaned messages at window boundary:** `loadHistory` trims BOTH ends of the loaded window:
+  - **Start:** advance forward to the first `role: "user"` message (handles orphaned tool results whose parent assistant was trimmed off by the limit).
+  - **End:** if the window ends with an `assistant` message containing `toolCalls` but no following `tool` results (crash between assistant save and tool result save), trim that trailing assistant message.
+  - Guarantees a clean message sequence for the LLM: starts with `user`, no orphaned tool results, no dangling tool-call assistant messages.
 - **Images in messages:** `saveMessage` receives extracted text only; callers must extract text from `ContentPart[]` before calling. Images are ephemeral (base64 too large for DB).
 - **Crash between history.push and saveMessage:** Tolerable — at most one message lost at crash boundary. On restart, DB is the source of truth. Write-to-DB-first is not worth the complexity since crashes are rare.
 - **userId collision across channels:** Currently safe — Telegram uses numeric chat IDs, browser uses `"owner"`. Known gap: `channel` is written to DB but `loadHistory` filters only by `user_id`. TODO: if a new channel is added that could produce colliding userIds, add `channel` to `loadHistory` filter. For now, `user_id` alone is sufficient.
 - **Scheduler `getHistory()` after restart:** Fixed — `getHistory()` now calls `hydrateUser()` which loads from DB if the in-memory map is empty (see Section 1, "Update `getHistory()`").
 - **Summarization language:** The compaction prompt is hardcoded in Russian ("Пиши на русском"). This matches the project's UI language (per CLAUDE.md). If Betsy is ever used for non-Russian conversations, this should be made configurable. Accepted assumption for now.
 - **Streaming draft on compaction `continue`:** When compaction fires during a tool-use turn with streaming enabled, the Telegram handler's `streamText` may already contain partial text from the pre-compaction LLM call. After `continue`, the next LLM call appends more text via the same `streamChunk` callback. This is acceptable — tool-use turns typically have minimal/empty `response.text`, so the visual impact is negligible. If it becomes a problem, the engine could reset the streaming state before `continue`, but this is out of scope.
-- **`extractText` utility:** Used in `compaction.ts` to convert `LLMMessage.content` (string or ContentPart[]) to a plain string. Defined as a local helper in `compaction.ts` — not shared, since it's only needed there.
+- **`extractText` utility:** Converts `LLMMessage.content` (string or ContentPart[]) to a plain string. Defined as an **exported** helper in `conversations.ts` and used by both `compaction.ts` (for formatting messages in the summarization prompt) and `engine.ts` (for extracting text from image user messages before calling `saveMessage`). Signature: `extractText(content: string | ContentPart[]): string`.
