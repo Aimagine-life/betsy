@@ -4,7 +4,9 @@ import { isConfigured, loadConfig, getAgentName, getPersonality, getLLMApiKey } 
 import { TelegramChannel } from "./channels/telegram/index.js";
 import { LLMRouter } from "./core/llm/router.js";
 import { Engine } from "./core/engine.js";
-import { getPersonality } from "./core/config.js";
+import { ToolRegistry } from "./core/tools/registry.js";
+import { HttpTool } from "./core/tools/http.js";
+import { BrowserTool } from "./core/tools/browser.js";
 
 function getAddress(): string {
   const nets = os.networkInterfaces();
@@ -58,6 +60,11 @@ async function main() {
     }
     console.log("✅ LLM подключён");
   }
+
+  // Register tools
+  const tools = new ToolRegistry();
+  tools.register(new HttpTool());
+  tools.register(new BrowserTool());
 
   // Setup Engine with personality
   const personality = getPersonality(config);
