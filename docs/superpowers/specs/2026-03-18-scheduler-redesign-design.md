@@ -15,7 +15,7 @@ Betsy's scheduler tool creates cron tasks in memory, but `onTaskFire` callback i
 | Where to deliver? | Same channel the request came from |
 | Persistence? | SQLite (better-sqlite3, already in project) |
 | Missed tasks on restart? | Execute missed one-shot, skip recurring |
-| Conversation context? | Save last 10 messages (max 700 chars) with task |
+| Conversation context? | Save last 10 messages (max 700 chars total) with task |
 
 ## Approach
 
@@ -45,7 +45,6 @@ interface ScheduledTask {
   chatId: string;                // delivery target
   nextRunAt: number;             // Unix timestamp ms
   lastRunAt: number | null;
-  oneShot: boolean;              // true for "at", false for "every"/"cron"
   createdAt: number;
 }
 ```
@@ -56,16 +55,21 @@ interface ScheduledTask {
 
 ### Lifecycle
 
-- **`at`:** `oneShot: true`, deleted from DB after firing
-- **`every`:** `nextRunAt += everyMs` after each fire, updated in DB
+- **`at`:** one-shot, deleted from DB after firing (derived from `schedule.kind === "at"`)
+- **`every`:** `nextRunAt += everyMs` after each fire, updated in DB. Stopped only via explicit `remove`.
 - **`cron`:** `nextRunAt` recalculated via cron parser
+
+### Task Name Uniqueness
+
+`name` must be unique. `action: "remove"` works by `name`. `id` (uuid) is the primary key in SQLite but not exposed to the LLM.
 
 ## Ticker
 
 - `setInterval` every 30 seconds (down from 60)
 - Checks `nextRunAt <= Date.now()` for all tasks
-- Calls registered `onTaskFire(task)` callback
-- After fire: updates or deletes task in DB depending on type
+- **Before** calling the async callback: immediately update `nextRunAt` in DB (or delete for `at` tasks) to prevent double-fire if callback takes longer than 30s
+- Then calls registered `onTaskFire(task)` callback asynchronously
+- `at` tasks may fire up to 30s late — acceptable for the use case
 
 ## Startup Recovery
 
@@ -92,12 +96,14 @@ command: string                            // LLM prompt
 
 ### Relative Time Parsing
 
-`at` accepts: `"+5m"`, `"+2h30m"`, `"+1d"`, or ISO string `"2026-03-18T15:30:00"`.
+`at` accepts: `"+5m"`, `"+2h30m"`, `"+1d"`, or ISO string `"2026-03-18T15:30:00"` (parsed as local server time).
 `every` accepts: `"30s"`, `"5m"`, `"2h"`, `"1d"`.
+
+Note: All times use server-local timezone (same as current cron parser which uses `getHours()`). Betsy is a single-owner bot, so server timezone matches owner timezone.
 
 ### Automatic Fields
 
-`channel` and `chatId` are NOT passed by LLM — injected automatically from incoming message metadata.
+`channel` and `chatId` are NOT passed by LLM — injected automatically via **mutable setter** on the scheduler tool instance. The tool exposes `setMessageContext(channel, chatId, messages)` which the engine calls before each tool execution round. This avoids changing the `Tool` interface or re-creating the tool per message.
 
 ### Example Calls
 
@@ -128,7 +134,31 @@ command: string                            // LLM prompt
 
 Scheduler tool becomes a thin wrapper over scheduler instance (owns SQLite store + ticker), instead of standalone object with internal Map.
 
-Context passed to tool via closure at creation time (channel, chatId from current message).
+### engine.process() for scheduled tasks
+
+When a task fires, the callback constructs an `IncomingMessage`:
+```typescript
+{
+  channelName: task.channel,
+  userId: task.chatId,      // same user who created the task
+  text: reminderPrompt,     // built from command + context
+  timestamp: Date.now(),
+  metadata: { scheduledTask: true }
+}
+```
+This means the scheduled response shares conversation history with the user — the bot knows who it's talking to.
+
+### Channel delivery
+
+The `onTaskFire` callback looks up the channel by `task.channel` from a `Map<string, { send(userId: string, msg: OutgoingMessage): Promise<void> }>`. Currently only `TelegramChannel` implements `send()`. Browser (WebSocket) delivery is best-effort — if the user is not connected, the message is lost. This is acceptable — primary use case is Telegram.
+
+### Conversation context capture
+
+Context is captured at task creation time from the mutable setter's `messages` array:
+- Includes both user and assistant messages (most recent first)
+- Format: plain text, one line per message: `"user: ...\nassistant: ..."`
+- Truncation: take the most recent messages that fit within 700 chars total, drop older ones
+- Stored as a single string in the `context` field
 
 ## Prompt Changes
 
@@ -161,14 +191,14 @@ Prompt on task fire (passed to engine.process):
 | `src/core/tools/scheduler.ts` | Extend types, SQLite store, 3 schedule types, ticker |
 | `src/index.ts` | Init store, onTaskFire callback, startup recovery |
 | `src/core/prompt.ts` | Expand scheduler tool description |
-| `src/core/tools/types.ts` | Possibly add metadata to execute() for channel/chatId |
+| `src/core/tools/types.ts` | No changes — context passed via mutable setter on scheduler tool |
 
 ## What Stays the Same
 
 - Engine — no changes, process() called as usual
 - TelegramChannel — no changes, existing send() used
 - Cron parser — stays, used for kind: "cron"
-- Tool interface — execute(params) signature preserved
+- Tool interface — execute(params) signature preserved, no changes to types.ts
 - Telegram message handlers — untouched
 - All other tools — untouched
 
