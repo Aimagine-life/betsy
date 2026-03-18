@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 **Algorithm:**
 1. Load current summary from DB via `loadSummary(userId)`
 2. Load ALL messages from DB for this user via a dedicated unbounded query: `SELECT * FROM conversations WHERE user_id = ? ORDER BY timestamp ASC` (NOT via `loadHistory` which has a limit=40 cap). This ensures all accumulated messages are available for summarization.
-3. Split at a **turn boundary**: find the midpoint by message count, then advance forward to the next `role: "user"` message. This ensures the split never lands mid-turn (between an assistant tool-call message and its tool results). Old part = everything before the split, fresh part = everything from the split onward.
+3. Split at a **turn boundary**: find the midpoint by message count, then advance forward to the next `role: "user"` message. This ensures the split never lands mid-turn (between an assistant tool-call message and its tool results). Old part = everything before the split, fresh part = everything from the split onward. **Fallback:** if no `role: "user"` message exists after the midpoint (e.g., long tool chain at the end), use the last `role: "user"` message before the midpoint as the split point instead. If no user message exists at all, abort compaction.
 4. Build the summarization prompt as an `LLMMessage[]` array and call `llm.chat()`:
 
 ```typescript
@@ -182,7 +182,11 @@ private hydrateUser(userId: string): void {
 }
 ```
 
-**Summary cache:** Add `private summaries: Map<string, string> = new Map()` to Engine. This cache is updated on:
+**New Engine fields:**
+- `private summaries: Map<string, string> = new Map()` — summary cache
+- `private compactionInFlight: Set<string> = new Set()` — prevents concurrent background compactions per user
+
+**Summary cache** is updated on:
 - Initial load from DB (above)
 - After compaction (reload summary from DB)
 
@@ -214,6 +218,7 @@ New behavior — compaction only triggers during tool-use turns (where `continue
 // After LLM response, before tool execution:
 if (!compactionAttempted && response.usage && response.usage.promptTokens > contextBudget) {
   compactionAttempted = true; // prevent tight loop on repeated failure
+  turn--; // compensate: compaction retry should not consume a turn
   await compactHistory(userId, this.deps.llm.fast());
   const { messages, summary } = loadHistory(userId);
   this.histories.set(userId, messages);
@@ -252,8 +257,9 @@ The hard stop at step 2 always runs first. It fires at 50k regardless of `contex
 **Terminal-turn compaction:** For terminal turns (no tool calls) where `promptTokens > contextBudget`, compaction does NOT fire immediately (no `continue` possible — the response is already generated). Instead, run compaction **after returning the response** as a fire-and-forget cleanup:
 
 ```typescript
-// After returning the terminal response:
-if (response.usage && response.usage.promptTokens > contextBudget) {
+// After returning the terminal response (guarded by per-user flag to prevent concurrent compactions):
+if (!this.compactionInFlight.has(userId) && response.usage && response.usage.promptTokens > contextBudget) {
+  this.compactionInFlight.add(userId);
   compactHistory(userId, this.deps.llm.fast())
     .then(() => {
       // Update in-memory state so next message benefits immediately
@@ -261,7 +267,8 @@ if (response.usage && response.usage.promptTokens > contextBudget) {
       this.histories.set(userId, messages);
       if (summary) this.summaries.set(userId, summary);
     })
-    .catch(err => console.error("Background compaction failed:", err));
+    .catch(err => console.error("Background compaction failed:", err))
+    .finally(() => this.compactionInFlight.delete(userId));
 }
 ```
 
@@ -271,7 +278,9 @@ This ensures terminal-turn-heavy workloads don't grow from `contextBudget` to `M
 
 ### 4. Remove splice trimming (line 88-90)
 
-Delete `history.splice(0, history.length - MAX_HISTORY)` — compaction now manages context size by tokens, not message count. The `limit = 40` in `loadHistory` serves as a secondary guard to prevent loading unbounded messages from DB on restart (before the first compaction runs). This is intentional — it caps DB reads, not in-memory growth.
+Delete `history.splice(0, history.length - MAX_HISTORY)` — compaction now manages context size by tokens, not message count. The `limit = 40` in `loadHistory` serves as a secondary guard to prevent loading unbounded messages from DB on restart (before the first compaction runs). This caps DB reads, not in-memory growth.
+
+**Accepted risk:** In-memory history grows unbounded between compaction events. In long back-and-forth conversations without tool calls, the array can grow large before terminal-turn background compaction fires. This is acceptable because: (a) the LLM's own context window limits effective history size, (b) `MAX_PROMPT_TOKENS` hard stop prevents infinite growth, (c) background compaction fires on every terminal turn exceeding `contextBudget`.
 
 ## Changes to `src/core/config.ts`
 
