@@ -1,3 +1,7 @@
+<p align="right">
+  🇷🇺 Русский | <a href="README.en.md">🇬🇧 English</a>
+</p>
+
 <p align="center">
   <img src="https://i.ibb.co/rKmJSLvZ/photo-2026-03-19-00-33-38.jpg" alt="Betsy" width="300" />
 </p>
