@@ -51,7 +51,21 @@ function markdownToTelegramHtml(text: string): string {
       parts.push(`<code>${escapeHtml(segment.slice(1, -1))}</code>`);
     } else {
       // Regular text — convert formatting
-      let html = escapeHtml(segment);
+      // Extract markdown links before escaping HTML (urls contain & etc.)
+      const linkPlaceholders: string[] = [];
+      let withPlaceholders = segment.replace(
+        /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+        (_match, label, url) => {
+          const idx = linkPlaceholders.length;
+          linkPlaceholders.push(
+            `<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`,
+          );
+          return `\x00LINK${idx}\x00`;
+        },
+      );
+      let html = escapeHtml(withPlaceholders);
+      // Restore link placeholders
+      html = html.replace(/\x00LINK(\d+)\x00/g, (_m, i) => linkPlaceholders[Number(i)]);
       // ### heading → <b>heading</b> (strip markdown headers)
       html = html.replace(/^#{1,6}\s+(.+)$/gm, "<b>$1</b>");
       // **bold** → <b>bold</b>
@@ -60,6 +74,10 @@ function markdownToTelegramHtml(text: string): string {
       html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<i>$1</i>");
       // ~~strikethrough~~ → <s>strikethrough</s>
       html = html.replace(/~~(.+?)~~/g, "<s>$1</s>");
+      // > blockquote → <blockquote>
+      html = html.replace(/^&gt;\s?(.+)$/gm, "<blockquote>$1</blockquote>");
+      // Merge adjacent blockquotes into one
+      html = html.replace(/<\/blockquote>\n<blockquote>/g, "\n");
       parts.push(html);
     }
   }

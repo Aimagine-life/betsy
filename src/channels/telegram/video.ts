@@ -2,35 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { synthesizeSpeech } from "./voice.js";
-
-/** Upload a buffer to catbox.moe and return its public URL. */
-async function uploadTempFile(buffer: Buffer, filename: string): Promise<string> {
-  const ext = path.extname(filename).slice(1) || "bin";
-  const mimeTypes: Record<string, string> = {
-    png: "image/png",
-    jpg: "image/jpeg",
-    ogg: "audio/ogg",
-    mp3: "audio/mpeg",
-    wav: "audio/wav",
-  };
-
-  const formData = new FormData();
-  formData.append("reqtype", "fileupload");
-  formData.append(
-    "fileToUpload",
-    new Blob([new Uint8Array(buffer)], { type: mimeTypes[ext] || "application/octet-stream" }),
-    filename,
-  );
-
-  const res = await fetch("https://catbox.moe/user/api.php", {
-    method: "POST",
-    body: formData,
-  });
-
-  const url = await res.text();
-  if (!url.startsWith("http")) throw new Error(`Upload failed: ${url.slice(0, 200)}`);
-  return url.trim();
-}
+import { uploadToFal } from "../../core/fal-upload.js";
 
 /** Generate a lip-sync talking-head video via fal.ai SadTalker. */
 export async function generateLipSync(
@@ -46,8 +18,8 @@ export async function generateLipSync(
     if (!audio) return null;
 
     const [audioUrl, imageUrl] = await Promise.all([
-      uploadTempFile(audio, "speech.ogg"),
-      uploadTempFile(fs.readFileSync(avatarPath), "avatar.png"),
+      uploadToFal(audio, "speech.ogg", falApiKey),
+      uploadToFal(fs.readFileSync(avatarPath), "avatar.png", falApiKey),
     ]);
 
     const res = await fetch("https://fal.run/fal-ai/sadtalker", {

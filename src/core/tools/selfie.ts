@@ -1,37 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Tool, ToolResult } from "./types.js";
+import { uploadToFal } from "../fal-upload.js";
 
 const FAL_ENDPOINT = "https://fal.run/xai/grok-imagine-image/edit";
-
-/** Upload a buffer to fal.ai storage and return its public URL. */
-async function uploadToFal(buffer: Buffer, filename: string, falApiKey: string): Promise<string> {
-  const ext = path.extname(filename).slice(1) || "bin";
-  const mimeTypes: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg" };
-  const contentType = mimeTypes[ext] || "application/octet-stream";
-
-  const res = await fetch("https://fal.run/fal-ai/any/upload", {
-    method: "PUT",
-    headers: {
-      Authorization: `Key ${falApiKey}`,
-      "Content-Type": contentType,
-    },
-    body: new Uint8Array(buffer),
-  });
-
-  if (!res.ok) {
-    // Fallback: use data URL
-    const base64 = buffer.toString("base64");
-    return `data:${contentType};base64,${base64}`;
-  }
-
-  const data = (await res.json()) as { url?: string };
-  if (data.url) return data.url;
-
-  // Fallback: data URL
-  const base64 = buffer.toString("base64");
-  return `data:${contentType};base64,${base64}`;
-}
 
 const MIRROR_KEYWORDS =
   /одежд|плать|костюм|наряд|юбк|куртк|пальто|шуб|худи|футболк|джинс|туфл|кроссовк|шапк|очк|аксессуар|образ|стиль|лук|мод[аы]|примерк|надел|ношу|переодел|outfit|wearing|clothes|dress|suit|fashion|full.body|mirror|hoodie|jacket/i;
