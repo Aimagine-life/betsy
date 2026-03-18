@@ -44,8 +44,12 @@ export class Engine {
     // Build system prompt with memory context
     const systemPrompt = this.buildPromptWithMemory(msg.text, userId);
 
-    // Add user message
-    history.push({ role: "user", content: msg.text });
+    // Add user message (with reply context if replying to a specific message)
+    const replyTo = msg.metadata?.replyToText as string | undefined;
+    const userContent = replyTo
+      ? `[В ответ на сообщение: "${replyTo}"]\n\n${msg.text}`
+      : msg.text;
+    history.push({ role: "user", content: userContent });
 
     // Trim history to avoid context overflow
     if (history.length > MAX_HISTORY) {

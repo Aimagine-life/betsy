@@ -221,6 +221,9 @@ function commandBody(ctx: Context, command: string): string {
 
 /** Convert a grammY Context into a channel-neutral IncomingMessage. */
 function toIncoming(ctx: Context, text: string): IncomingMessage {
+  const reply = ctx.message?.reply_to_message;
+  const replyToText = reply?.text ?? reply?.caption;
+
   return {
     channelName: "telegram",
     userId: String(ctx.chat?.id ?? ctx.from?.id ?? "unknown"),
@@ -230,6 +233,7 @@ function toIncoming(ctx: Context, text: string): IncomingMessage {
       messageId: ctx.message?.message_id,
       fromUsername: ctx.from?.username,
       firstName: ctx.from?.first_name,
+      ...(replyToText && { replyToText }),
     },
   };
 }
