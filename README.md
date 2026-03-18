@@ -1,5 +1,5 @@
 <p align="right">
-  🇷🇺 Русский | <a href="README.en.md">🇬🇧 English</a>
+  <a href="README.ru.md">🇷🇺 Русский</a> | 🇬🇧 English
 </p>
 
 <p align="center">
@@ -9,136 +9,136 @@
 <h1 align="center">Betsy</h1>
 
 <p align="center">
-  <b>AI-компаньон с характером, голосом, памятью и собственным лицом</b>
+  <b>AI companion with personality, voice, memory, and her own face</b>
 </p>
 
 <p align="center">
-  <a href="#быстрый-старт">Быстрый старт</a> •
-  <a href="#возможности">Возможности</a> •
-  <a href="#установка-на-сервер">Установка на сервер</a> •
-  <a href="#настройка">Настройка</a> •
-  <a href="#разработка">Разработка</a>
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#features">Features</a> •
+  <a href="#server-deployment">Server Deployment</a> •
+  <a href="#configuration">Configuration</a> •
+  <a href="#development">Development</a>
 </p>
 
 ---
 
-## Не просто бот. Компаньон.
+## Not just a bot. A companion.
 
-Betsy — это **автономный AI-агент**, который живёт на вашем сервере. У неё есть своя личность, голос, лицо — и она умеет делать вещи сама. Не ждёт команд — действует. Не забывает — учится. Не ломается ночью из-за нулевого баланса — переключается на бесплатную модель и продолжает работать.
+Betsy is an **autonomous AI agent** that lives on your server. She has her own personality, voice, face — and she gets things done on her own. She doesn't wait for commands — she acts. She doesn't forget — she learns. She doesn't go down at night because of a zero balance — she switches to a free model and keeps working.
 
-Она может быть кем угодно — от заботливой подруги до жёсткого ментора. Всё зависит от того, как вы её настроите.
+She can be anyone — from a caring friend to a tough mentor. It all depends on how you set her up.
 
-## Для работы и развлечений. Твой идеальный AI-компаньон.
-
-<p align="center">
-  <img src="https://i.ibb.co/1fL31BmX/photo-2026-03-18-23-54-53.jpg" alt="Betsy — для работы и развлечений" width="400" />
-</p>
-
-Betsy одинаково хороша в деловых задачах и в неформальном общении. Утром — напоминание о встрече и дайджест новостей. Днём — поиск информации, работа с файлами, выполнение команд. Вечером — разговор по душам, шутки и селфи по запросу.
-
-## Любой аватар. Любой характер.
-
-Хочешь Брэда Питта — будет Брэд Питт. Хочешь свою первую учительницу — пожалуйста. Хочешь угрюмого сисадмина, который отвечает только когда настроение есть — настраивай.
-
-Личность задаётся в конфиге: имя, пол, тон, стиль, кастомные инструкции. Всё остальное — голос, аватар, манера общения — подстраивается под это.
+## Work and play. Your perfect AI companion.
 
 <p align="center">
-  <img src="https://i.ibb.co/4n5g1nCH/photo-2026-03-19-00-18-21.jpg" alt="Настраиваемый характер" width="400" />
+  <img src="https://i.ibb.co/1fL31BmX/photo-2026-03-18-23-54-53.jpg" alt="Betsy — work and play" width="400" />
 </p>
 
-## Почему Betsy?
+Betsy is equally great at business tasks and casual conversation. Morning — meeting reminders and news digest. Afternoon — information search, file management, command execution. Evening — heart-to-heart talks, jokes, and selfies on request.
 
-| | Обычные чат-боты | **Betsy** |
+## Any avatar. Any personality.
+
+Want Brad Pitt? Done. Want your first grade teacher? Sure. Want a grumpy sysadmin who only replies when he's in the mood? Go for it.
+
+Personality is set in the config: name, gender, tone, style, custom instructions. Everything else — voice, avatar, communication style — adapts accordingly.
+
+<p align="center">
+  <img src="https://i.ibb.co/4n5g1nCH/photo-2026-03-19-00-18-21.jpg" alt="Customizable personality" width="400" />
+</p>
+
+## Why Betsy?
+
+| | Regular chatbots | **Betsy** |
 |---|---|---|
-| **Личность** | Шаблонные ответы | Настраиваемый характер, тон, стиль |
-| **Память** | Забывает после перезагрузки | Помнит всё, учится на разговорах |
-| **Голос** | Текст | Голосовые, видео-кружочки, селфи |
-| **Действия** | Только отвечает | Выполняет команды, ходит в интернет, работает с файлами |
-| **Доступность** | Падает при нулевом балансе | Автоматический фолбэк на бесплатные модели |
-| **Контроль** | Чужой сервер | Ваш сервер, ваши данные |
+| **Personality** | Template responses | Customizable character, tone, style |
+| **Memory** | Forgets after restart | Remembers everything, learns from conversations |
+| **Voice** | Text only | Voice messages, video circles, selfies |
+| **Actions** | Only responds | Executes commands, browses the web, works with files |
+| **Uptime** | Goes down on zero balance | Auto-fallback to free models |
+| **Control** | Someone else's server | Your server, your data |
 
-## Возможности
+## Features
 
-### 🗣 Голос
+### 🗣 Voice
 
-Пишешь голосовое — бот отвечает голосовым. Через MiniMax (встроено) или ElevenLabs (богатейший выбор голосов). Когда голос совпадает с характером — это уже совсем другое ощущение.
+Send a voice message — she replies with a voice message. Via MiniMax (built-in) or ElevenLabs (vast voice library). When the voice matches the personality — it's a whole different experience.
 
-### 🎥 Видео-кружочки
+### 🎥 Video circles
 
-Бетси присылает видео-кружочки с lip-sync — губы двигаются в такт речи. Как настоящий видеозвонок, только в Telegram.
+Betsy sends video circles with lip-sync — lips move in sync with speech. Like a real video call, but in Telegram.
 
-### 📸 Селфи
+### 📸 Selfies
 
-Попросишь — пришлёт. Захочет сама — тоже пришлёт. Генерация через fal.ai с сохранением внешности по референсному фото. Старательная — присылает прувы своей работы.
+Ask and she'll send one. Sometimes she'll send one on her own. Generated via fal.ai with consistent appearance from a reference photo. She's diligent — sends proof of her work.
 
 <p align="center">
-  <img src="https://i.ibb.co/8gCfNnW9/photo-2026-03-18-22-45-29.jpg" alt="Бетси присылает прувы работы" width="400" />
+  <img src="https://i.ibb.co/8gCfNnW9/photo-2026-03-18-22-45-29.jpg" alt="Betsy sends proof of work" width="400" />
 </p>
 
-### 🧠 Память и самообучение
+### 🧠 Memory & self-learning
 
-Помнит о чём вы говорили раньше. Не переспрашивает по десять раз одно и то же. Извлекает факты из разговоров и сохраняет в базу знаний. Без памяти весь «характер» рассыпается после перезагрузки — поэтому это было первым, что я сделал.
+Remembers what you talked about before. Doesn't ask the same thing ten times. Extracts facts from conversations and saves them to a knowledge base. Without memory, the whole "personality" falls apart after a reboot — that's why it was the first thing I built.
 
-### 💬 Понимает контекст реплаев
+### 💬 Reply context awareness
 
-Ответь на сообщение недельной давности — она поймёт, о чём речь. Если там было изображение — поймёт и что на нём. Не нужно объяснять контекст заново.
+Reply to a week-old message — she'll understand what you're talking about. If there was an image — she'll understand that too. No need to re-explain context.
 
-### 🔄 Никогда не падает
+### 🔄 Never goes down
 
-Баланс кончился — автоматически переключается на бесплатные модели через OpenRouter. Перебирает цепочку моделей пока не найдёт рабочую. Баланс пополнен — сама возвращается на основную модель. Бетси **всегда** на связи.
+Balance ran out? Automatically switches to free models via OpenRouter. Cycles through a chain of models until it finds a working one. Balance replenished? Switches back to the main model on its own. Betsy is **always** available.
 
 ```yaml
 llm:
-  fast_model: google/gemini-2.5-flash        # быстрые ответы
-  strong_model: anthropic/claude-sonnet-4     # сложные задачи
-  fallback_models:                             # когда баланс на нуле
+  fast_model: google/gemini-2.5-flash        # fast responses
+  strong_model: anthropic/claude-sonnet-4     # complex tasks
+  fallback_models:                             # when balance hits zero
     - qwen/qwen3-coder:free
     - meta-llama/llama-3.3-70b-instruct:free
 ```
 
-### 🔧 Автономный агент
+### 🔧 Autonomous agent
 
-Не просто отвечает на вопросы — **делает**. Многоходовой agentic loop: получает задачу → вызывает инструменты → проверяет результат → повторяет, пока не готово.
+Doesn't just answer questions — **does things**. Multi-step agentic loop: gets a task → calls tools → checks result → repeats until done.
 
 <p align="center">
-  <img src="https://i.ibb.co/3mDy1f6h/photo-2026-03-19-00-36-15.jpg" alt="Полезный ассистент" width="400" />
+  <img src="https://i.ibb.co/3mDy1f6h/photo-2026-03-19-00-36-15.jpg" alt="Helpful assistant" width="400" />
 </p>
 
-### ⏰ Уведомления и расписания
+### ⏰ Notifications & schedules
 
-Разовые напоминания, регулярные задачи, ежедневные дайджесты. Или просто «ты поел сегодня?» — зависит от того, какую личность настроишь.
+One-time reminders, recurring tasks, daily digests. Or just "did you eat today?" — depends on what personality you set up.
 
-### 🌐 Виртуальный браузер
+### 🌐 Virtual browser
 
-Умеет сама ходить по сайтам, искать информацию, читать страницы и делать скриншоты. Через Playwright — полноценный headless-браузер.
+Can browse websites on her own, search for information, read pages, and take screenshots. Via Playwright — a full headless browser.
 
-### 🔌 Саморасширение
+### 🔌 Self-extension
 
-Может сама устанавливать npm-пакеты, менять свои настройки, подключать новые каналы и плагины. Растёт вместе с вами.
+Can install npm packages, change her own settings, connect new channels and plugins. Grows with you.
 
-## Быстрый старт
+## Quick Start
 
 ```bash
-# Установи Node.js → https://nodejs.org
+# Install Node.js → https://nodejs.org
 
 npx betsy
 ```
 
-Откроется браузер — следуй шагам визарда (60 секунд):
+A browser will open — follow the wizard steps (60 seconds):
 
-1. **API ключ** — регистрация на [openrouter.ai](https://openrouter.ai) (бесплатно)
-2. **Пароль** — для защиты настроек
-3. **Личность** — имя, характер, стиль общения
-4. **Каналы** — Telegram, браузер и другие
-5. **Готово** — чат прямо в браузере
+1. **API key** — register at [openrouter.ai](https://openrouter.ai) (free)
+2. **Password** — to protect settings
+3. **Personality** — name, character, communication style
+4. **Channels** — Telegram, browser, and more
+5. **Done** — chat right in the browser
 
-## Установка на сервер
+## Server Deployment
 
 ```bash
 npx betsy-install
 ```
 
-Введи IP, логин и пароль сервера — установщик сделает всё сам: установит зависимости, настроит systemd, запустит Betsy.
+Enter your server's IP, login, and password — the installer does everything: installs dependencies, configures systemd, launches Betsy.
 
 ### Docker
 
@@ -150,43 +150,43 @@ docker run -d \
   aimagine/betsy
 ```
 
-## Каналы
+## Channels
 
-| Канал | Статус | Что нужно |
-|-------|--------|-----------|
-| 🌐 Браузер | ✅ Работает | Ничего — включён по умолчанию |
-| 📱 Telegram | ✅ Работает | Токен от [@BotFather](https://t.me/BotFather) |
-| 💬 MAX Messenger | 🔜 Скоро | — |
+| Channel | Status | Requirements |
+|---------|--------|-------------|
+| 🌐 Browser | ✅ Ready | Nothing — enabled by default |
+| 📱 Telegram | ✅ Ready | Token from [@BotFather](https://t.me/BotFather) |
+| 💬 MAX Messenger | 🔜 Coming soon | — |
 
-## 11 инструментов из коробки
+## 11 tools out of the box
 
-| Инструмент | Что делает |
-|------------|------------|
-| `shell` | Выполнение команд в терминале |
-| `files` | Чтение, запись, список файлов |
-| `http` | HTTP-запросы к любым API |
-| `web` | Поиск в интернете |
-| `browser` | Полноценный браузер — навигация, скриншоты, чтение страниц |
-| `memory` | Поиск и сохранение знаний |
-| `scheduler` | Напоминания и регулярные задачи |
-| `selfie` | Генерация селфи |
-| `self_config` | Изменение собственных настроек |
-| `npm_install` | Установка npm-пакетов |
-| `ssh` | Подключение к серверам |
+| Tool | What it does |
+|------|-------------|
+| `shell` | Execute terminal commands |
+| `files` | Read, write, list files |
+| `http` | HTTP requests to any API |
+| `web` | Web search |
+| `browser` | Full browser — navigation, screenshots, page reading |
+| `memory` | Search and save knowledge |
+| `scheduler` | Reminders and recurring tasks |
+| `selfie` | Selfie generation |
+| `self_config` | Modify own settings |
+| `npm_install` | Install npm packages |
+| `ssh` | Connect to servers |
 
-## Настройка
+## Configuration
 
-Конфиг хранится в `~/.betsy/config.yaml`:
+Config is stored in `~/.betsy/config.yaml`:
 
 ```yaml
 agent:
-  name: Бетси
+  name: Betsy
   gender: female
   personality:
     tone: friendly          # friendly | professional | casual | sassy
     style: detailed         # concise | detailed | balanced
     custom_instructions: |
-      Ты умная и весёлая помощница.
+      You are a smart and fun assistant.
 
 llm:
   provider: openrouter
@@ -210,7 +210,7 @@ plugins:
     enabled: false
 ```
 
-## Архитектура
+## Architecture
 
 ```
 betsy/
@@ -218,39 +218,39 @@ betsy/
 │   ├── core/
 │   │   ├── engine.ts       ← Agentic loop (LLM → tools → repeat)
 │   │   ├── llm/            ← LLM router + OpenRouter provider + fallback
-│   │   ├── memory/         ← SQLite: база знаний, самообучение
-│   │   ├── skills/         ← Навыки (daily-summary, monitor)
-│   │   └── tools/          ← 11 инструментов
+│   │   ├── memory/         ← SQLite: knowledge base, self-learning
+│   │   ├── skills/         ← Skills (daily-summary, monitor)
+│   │   └── tools/          ← 11 tools
 │   ├── channels/
-│   │   ├── telegram/       ← Telegram (grammy) + голос + видео
-│   │   └── browser/        ← WebSocket-чат
-│   ├── plugins/            ← Реестр плагинов
+│   │   ├── telegram/       ← Telegram (grammy) + voice + video
+│   │   └── browser/        ← WebSocket chat
+│   ├── plugins/            ← Plugin registry
 │   ├── server.ts           ← HTTP + WebSocket + JWT
 │   └── ui/                 ← React + Tailwind (Vite)
 │       └── pages/          ← Wizard, Chat, Status, Skills, Backup
 ```
 
-## Планы
+## Roadmap
 
-- 🎭 Галерея готовых личностей — выбери характер из каталога
-- 💬 MAX Messenger — новый канал
-- 📦 MSI-установщик для Windows — скачал, запустил, всё работает
-- 🎙 ElevenLabs — расширенный выбор голосов
+- 🎭 Personality gallery — pick a character from a catalog
+- 💬 MAX Messenger — new channel
+- 📦 MSI installer for Windows — download, run, done
+- 🎙 ElevenLabs — expanded voice selection
 
-## Разработка
+## Development
 
 ```bash
-npm run dev          # Запуск с hot-reload
-npm run build:all    # Сборка бэкенда и фронтенда
-npm test             # Тесты (vitest)
-npm run typecheck    # Проверка типов
+npm run dev          # Dev server with hot-reload
+npm run build:all    # Build backend and frontend
+npm test             # Tests (vitest)
+npm run typecheck    # Type checking
 ```
 
-## Требования
+## Requirements
 
 - Node.js 20+
-- [OpenRouter](https://openrouter.ai) API ключ
+- [OpenRouter](https://openrouter.ai) API key
 
-## Лицензия
+## License
 
 MIT — [Wildbots](https://github.com/wildbots)
