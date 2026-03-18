@@ -120,16 +120,18 @@ export class LLMRouter {
    * Handle a billing or rate limit error by switching models.
    * Returns true if successfully switched and caller should retry.
    */
+  // Note: concurrent requests during fallback transition may race (second call
+  // advances fallback index). Acceptable since the agentic loop is sequential.
   private async handleLLMError(err: unknown): Promise<boolean> {
     if (this._mode === "normal") {
-      return this.enterDegradedMode();
+      return this.enterDegradedMode(err);
     }
 
     // Already degraded — try next fallback
     return this.tryNextFallback();
   }
 
-  private enterDegradedMode(): boolean {
+  private enterDegradedMode(err: unknown): boolean {
     this.currentFallbackIndex = 0;
     const model = this.fallbackModels[0];
     if (!model) return false;
@@ -139,7 +141,11 @@ export class LLMRouter {
     this.switchDelegates(model);
     this.pendingNotification =
       "⚠️ Баланс OpenRouter исчерпан, работаю на бесплатной модели. Когда баланс будет пополнен, автоматически вернусь на основную модель.";
-    this.startBalanceCheck();
+    // Only start balance check for billing errors (empty balance).
+    // Rate limit errors are transient — no need to poll for balance recovery.
+    if (isBillingError(err)) {
+      this.startBalanceCheck();
+    }
     return true;
   }
 
