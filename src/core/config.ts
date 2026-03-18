@@ -85,6 +85,91 @@ export function getConfigPath(customPath?: string): string {
   return customPath ?? path.join(getConfigDir(), "config.yaml");
 }
 
+/**
+ * Convert a flat config (written by self_config tool) to the nested format
+ * expected by the zod schema. Handles both flat and already-nested configs.
+ */
+function normalizeConfig(raw: Record<string, unknown>): Record<string, unknown> {
+  // If it's already nested (agent is an object), return as-is
+  if (raw.agent && typeof raw.agent === "object") return raw;
+
+  // Flat format → nested
+  const out: Record<string, unknown> = {};
+
+  // agent
+  out.agent = {
+    name: raw.name ?? "Betsy",
+    personality: {
+      tone: raw.tone,
+      style: raw.style,
+      custom_instructions: raw.custom_instructions,
+      response_style: raw.response_style,
+    },
+  };
+
+  // telegram
+  if (raw.token) {
+    out.telegram = {
+      token: raw.token,
+      streaming: raw.streaming,
+      owner_id: raw.owner_id,
+    };
+  }
+
+  // llm — detect nested (fast/strong providers) vs flat
+  if (raw.api_key || raw.provider) {
+    out.llm = {
+      fast: {
+        provider: raw.provider ?? "openrouter",
+        model: raw.model ?? raw.fast_model,
+        api_key: raw.api_key,
+      },
+      strong: {
+        provider: raw.provider ?? "openrouter",
+        model: raw.strong_model ?? raw.model,
+        api_key: raw.api_key,
+      },
+    };
+  }
+
+  // memory
+  out.memory = {
+    max_knowledge: raw.max_knowledge ?? 200,
+    study_interval_min: raw.study_interval_min ?? 30,
+    learning_enabled: raw.learning_enabled ?? true,
+  };
+
+  // voice
+  if (raw.tts_provider || raw.voice_id) {
+    out.voice = {
+      tts_provider: raw.tts_provider,
+      voice_id: raw.voice_id,
+      speed: raw.speed,
+      pitch: raw.pitch,
+      emotion: raw.emotion,
+      openai_key: raw.openai_key,
+    };
+  }
+
+  // selfies
+  if (raw.kie_api_key) {
+    out.selfies = {
+      kie_api_key: raw.kie_api_key,
+      reference_photo: raw.reference_photo,
+      reference_photo_url: raw.reference_photo_url,
+    };
+  }
+
+  // plugins
+  if (typeof raw.plugins === "string") {
+    try { out.plugins = JSON.parse(raw.plugins); } catch { out.plugins = []; }
+  } else if (Array.isArray(raw.plugins)) {
+    out.plugins = raw.plugins;
+  }
+
+  return out;
+}
+
 export function loadConfig(customPath?: string): BetsyConfig | null {
   const filePath = getConfigPath(customPath);
   if (!fs.existsSync(filePath)) return null;
@@ -93,7 +178,22 @@ export function loadConfig(customPath?: string): BetsyConfig | null {
   const parsed = parseYaml(raw);
   if (!parsed || typeof parsed !== "object") return null;
 
-  return configSchema.parse(parsed);
+  const normalized = normalizeConfig(parsed as Record<string, unknown>);
+
+  const result = configSchema.safeParse(normalized);
+  if (!result.success) {
+    console.error("Config validation warnings:", result.error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join(", "));
+    // Best-effort: strip invalid fields and retry
+    for (const issue of result.error.issues) {
+      let obj: Record<string, unknown> = normalized;
+      const path = issue.path.slice(0, -1);
+      const key = issue.path[issue.path.length - 1];
+      for (const p of path) obj = obj[p] as Record<string, unknown>;
+      if (obj && key !== undefined) delete obj[key as string];
+    }
+    return configSchema.parse(normalized);
+  }
+  return result.data;
 }
 
 export function saveConfig(config: BetsyConfig, customPath?: string): void {
