@@ -231,9 +231,20 @@ if (!compactionAttempted && response.usage && response.usage.promptTokens > cont
 
 **Important declarations:** Change both `const history = ...` (line 63) and `const systemPrompt = ...` (line 66) to `let` to allow reassignment after compaction.
 
-**Placement:** This check runs ONLY when `stopReason === "tool_use"` — between the tool-use check and tool execution. If the turn is terminal (no tool calls), the response has already been generated correctly and is returned as-is. Compaction will happen on the next user message if needed.
+**Execution order in the agentic loop (explicit):**
+```
+1. LLM call → response
+2. [EXISTING] Hard stop: if promptTokens > MAX_PROMPT_TOKENS (50k) → return immediately
+   - This fires on ALL turns (tool-use and terminal) as absolute safety
+   - At this point, assistant tool-call message is NOT yet saved to DB
+3. Check stopReason:
+   a. Terminal (end_turn) → push + saveMessage → return response
+      → fire background compaction if promptTokens > contextBudget
+   b. Tool use → [NEW] compaction check (contextBudget) → continue if fired
+      → push + saveMessage for assistant tool-call → execute tools
+```
 
-Keep `MAX_PROMPT_TOKENS = 50_000` as an absolute safety hard stop above `contextBudget` (fallback if compaction fails).
+The hard stop at step 2 always runs first. It fires at 50k regardless of `contextBudget` (40k). The compaction check at step 3b fires at 40k only for tool-use turns. Between 40k and 50k: compaction handles it. Above 50k: hard stop catches it. The hard stop fires before `saveMessage` for the assistant tool-call, so no DB/RAM divergence on hard-stop exit.
 
 **Terminal-turn compaction:** For terminal turns (no tool calls) where `promptTokens > contextBudget`, compaction does NOT fire immediately (no `continue` possible — the response is already generated). Instead, run compaction **after returning the response** as a fire-and-forget cleanup:
 
@@ -280,10 +291,29 @@ Note: zod's `.default(40000)` would cover this at parse time even without the `n
 
 ## Changes to `src/core/memory/db.ts`
 
-Add migration logic and new table:
-1. Check `PRAGMA table_info(conversations)` for `user_id` column
-2. If missing: check row count — drop only if empty, otherwise ALTER TABLE (see Migration section above)
-3. Add `CREATE TABLE IF NOT EXISTS conversation_summaries`
+**Restructure `getDB()`:** The existing `db.exec(multiStatementSQL)` runs all DDL at once. Migration requires imperative logic (PRAGMA check → conditional branch) that cannot go inside `db.exec`. The approach:
+
+1. Keep the existing `db.exec` block as-is (with old `CREATE TABLE IF NOT EXISTS conversations` — it handles fresh installs)
+2. **After** `db.exec`, add an imperative migration block:
+   ```typescript
+   // Migration: upgrade conversations table if needed
+   const cols = db.pragma("table_info(conversations)") as Array<{ name: string }>;
+   const hasUserId = cols.some(c => c.name === "user_id");
+   if (!hasUserId) {
+     const count = db.prepare("SELECT COUNT(*) as cnt FROM conversations").get() as { cnt: number };
+     if (count.cnt === 0) {
+       db.exec("DROP TABLE IF EXISTS conversations");
+       db.exec(`CREATE TABLE conversations (...new schema...)`);
+     } else {
+       db.exec(`BEGIN; ALTER TABLE ...; ALTER TABLE ...; ALTER TABLE ...; DELETE ...; COMMIT;`);
+     }
+   }
+   // Always create summaries table (idempotent)
+   db.exec(`CREATE TABLE IF NOT EXISTS conversation_summaries (...)`);
+   db.exec(`CREATE INDEX IF NOT EXISTS idx_conv_user ON conversations(user_id, timestamp)`);
+   ```
+3. On fresh install: `db.exec` creates old-schema table → migration sees no `user_id` + count=0 → DROP + recreate with new schema. Works correctly.
+4. On existing install: `db.exec` finds table already exists (IF NOT EXISTS) → migration checks and upgrades. Works correctly.
 
 ## Data Flow
 
