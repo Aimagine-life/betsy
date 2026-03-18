@@ -27,11 +27,13 @@ const llmSchema = z.union([
     api_key: z.string(),
     fast_model: z.string().optional(),
     strong_model: z.string().optional(),
+    fallback_models: z.array(z.string()).optional(),
   }),
   // Old nested format (fast/strong)
   z.object({
     fast: llmProviderSchema.optional(),
     strong: llmProviderSchema.optional(),
+    fallback_models: z.array(z.string()).optional(),
   }),
 ]);
 
@@ -141,6 +143,7 @@ function normalizeConfig(raw: Record<string, unknown>): Record<string, unknown> 
         model: raw.strong_model ?? raw.model,
         api_key: raw.api_key,
       },
+      fallback_models: raw.fallback_models,
     };
   }
 

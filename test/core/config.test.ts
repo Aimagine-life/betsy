@@ -74,4 +74,43 @@ llm:
     fs.unlinkSync(tmpPath);
     expect(config?.memory?.context_budget).toBe(40000);
   });
+
+  it("accepts fallback_models in flat llm format", () => {
+    const yaml = `
+agent:
+  name: Test
+llm:
+  provider: openrouter
+  api_key: test-key
+  fast_model: test/fast
+  fallback_models:
+    - free/model-1
+    - free/model-2
+`;
+    const tmpPath = path.join(os.tmpdir(), "betsy-test-fallback.yaml");
+    fs.writeFileSync(tmpPath, yaml);
+    const config = loadConfig(tmpPath);
+    expect(config).not.toBeNull();
+    const llm = config!.llm as any;
+    expect(llm.fallback_models).toEqual(["free/model-1", "free/model-2"]);
+    fs.unlinkSync(tmpPath);
+  });
+
+  it("preserves fallback_models through normalizeConfig (flat format)", () => {
+    const yaml = `
+name: Test
+provider: openrouter
+api_key: test-key
+model: test/fast
+fallback_models:
+  - free/model-1
+`;
+    const tmpPath = path.join(os.tmpdir(), "betsy-test-fallback-flat.yaml");
+    fs.writeFileSync(tmpPath, yaml);
+    const config = loadConfig(tmpPath);
+    expect(config).not.toBeNull();
+    const llm = config!.llm as any;
+    expect(llm.fallback_models).toEqual(["free/model-1"]);
+    fs.unlinkSync(tmpPath);
+  });
 });
