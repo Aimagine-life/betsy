@@ -23,7 +23,7 @@ describe("SelfieTool", () => {
     const tool = new SelfieTool({ falApiKey: "key-123", referencePhotoUrl: "" });
     const result = await tool.execute({ context: "в кафе" });
     expect(result.success).toBe(false);
-    expect(result.output).toContain("reference");
+    expect(result.output).toContain("фото");
   });
 
   it("detects mirror mode from keywords", async () => {

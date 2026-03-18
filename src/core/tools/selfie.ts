@@ -1,6 +1,33 @@
+import fs from "node:fs";
+import path from "node:path";
 import type { Tool, ToolResult } from "./types.js";
 
 const FAL_ENDPOINT = "https://fal.run/xai/grok-imagine-image/edit";
+
+/** Upload a buffer to catbox.moe and return its public URL. */
+async function uploadToCatbox(buffer: Buffer, filename: string): Promise<string> {
+  const ext = path.extname(filename).slice(1) || "bin";
+  const mimeTypes: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg" };
+  const formData = new FormData();
+  formData.append("reqtype", "fileupload");
+  formData.append(
+    "fileToUpload",
+    new Blob([new Uint8Array(buffer)], { type: mimeTypes[ext] || "application/octet-stream" }),
+    filename,
+  );
+  const res = await fetch("https://catbox.moe/user/api.php", { method: "POST", body: formData });
+  const url = await res.text();
+  if (!url.startsWith("http")) throw new Error(`Upload failed: ${url.slice(0, 200)}`);
+  return url.trim();
+}
+
+/** Resolve reference photo to a public URL. If it's a local path, upload to catbox. */
+async function resolveReferenceUrl(ref: string): Promise<string> {
+  if (ref.startsWith("http")) return ref;
+  // Local file path — read and upload
+  const buffer = fs.readFileSync(ref);
+  return uploadToCatbox(buffer, path.basename(ref));
+}
 
 const MIRROR_KEYWORDS =
   /одежд|плать|костюм|наряд|юбк|куртк|пальто|шуб|худи|футболк|джинс|туфл|кроссовк|шапк|очк|аксессуар|образ|стиль|лук|мод[аы]|примерк|надел|ношу|переодел|outfit|wearing|clothes|dress|suit|fashion|full.body|mirror|hoodie|jacket/i;
@@ -62,7 +89,7 @@ export class SelfieTool implements Tool {
     if (!this.config.referencePhotoUrl) {
       return {
         success: false,
-        output: "Не задано референсное фото (reference_photo_url). Попроси пользователя задать URL аватара через self_config.",
+        output: "Не задано референсное фото. Попроси пользователя отправить своё фото и написать /setphoto.",
       };
     }
 
@@ -71,9 +98,11 @@ export class SelfieTool implements Tool {
       : detectMode(context);
 
     const prompt = buildPrompt(context, mode);
-    console.log(`📸 Selfie: mode=${mode}, ref=${this.config.referencePhotoUrl?.slice(0, 80)}, prompt=${prompt.slice(0, 80)}`);
 
     try {
+      const refUrl = await resolveReferenceUrl(this.config.referencePhotoUrl);
+      console.log(`📸 Selfie: mode=${mode}, ref=${refUrl.slice(0, 80)}`);
+
       const response = await fetch(FAL_ENDPOINT, {
         method: "POST",
         headers: {
@@ -81,7 +110,7 @@ export class SelfieTool implements Tool {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          image_url: this.config.referencePhotoUrl,
+          image_url: refUrl,
           prompt,
           num_images: 1,
           output_format: "jpeg",

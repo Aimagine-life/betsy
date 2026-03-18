@@ -3,6 +3,9 @@ import type { IncomingMessage, OutgoingMessage, ProgressCallback } from "../../c
 import type { MessageHandler } from "../types.js";
 import { sendVoiceResponse } from "./voice.js";
 import { sendVideoNote } from "./video.js";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
 
 /** Max Telegram message length. */
 const MAX_MSG_LEN = 4096;
@@ -248,10 +251,14 @@ const TOOL_LABELS: Record<string, string> = {
 // Handler registration
 // ---------------------------------------------------------------------------
 
+/** Callback to update selfie reference photo URL. */
+export type SetReferencePhotoFn = (url: string) => void;
+
 export function registerHandlers(
   bot: Bot,
   handler: MessageHandler,
   ownerChatId: number | null,
+  onSetReferencePhoto?: SetReferencePhotoFn,
 ): void {
   // --- Owner-only filter ---
   if (ownerChatId) {
@@ -417,6 +424,30 @@ export function registerHandlers(
     const body = commandBody(ctx, "selfie");
     if (!body) { await ctx.reply("Usage: /selfie <description>"); return; }
     await handleWithTyping(ctx, `Сделай селфи: ${body}`);
+  });
+
+  // /setphoto — set reference photo for selfie generation (saved locally)
+  bot.command("setphoto", async (ctx) => {
+    const photo = ctx.message?.reply_to_message?.photo ?? ctx.message?.photo;
+    if (!photo?.length) {
+      await ctx.reply("Отправь фото или ответь на фото командой /setphoto");
+      return;
+    }
+    try {
+      const fileId = photo[photo.length - 1].file_id;
+      const file = await ctx.api.getFile(fileId);
+      const token = bot.token;
+      const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+      // Download and save locally
+      const res = await fetch(fileUrl);
+      const buffer = Buffer.from(await res.arrayBuffer());
+      const savePath = path.join(os.homedir(), ".betsy", "reference.jpg");
+      fs.writeFileSync(savePath, buffer);
+      onSetReferencePhoto?.(savePath);
+      await ctx.reply("✅ Фото сохранено как референс для селфи");
+    } catch {
+      await ctx.reply("Не удалось обработать фото");
+    }
   });
 
   // /study

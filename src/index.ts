@@ -1,4 +1,6 @@
 import os from "node:os";
+import fs from "node:fs";
+import path from "node:path";
 import { createServer } from "./server.js";
 import { isConfigured, loadConfig, getAgentName, getPersonality, getLLMApiKey } from "./core/config.js";
 import { TelegramChannel } from "./channels/telegram/index.js";
@@ -118,6 +120,10 @@ async function main() {
   if (config.telegram?.token) {
     try {
       telegram = new TelegramChannel();
+      telegram.onSetReferencePhoto = (photoPath) => {
+        selfieTool.setReferencePhoto(photoPath);
+        console.log(`📸 Референсное фото обновлено: ${photoPath.slice(0, 60)}`);
+      };
       telegram.onMessage(async (msg, onProgress) => {
         if (engine) {
           scheduler.setMessageContext(
@@ -133,10 +139,11 @@ async function main() {
         token: config.telegram.token,
         owner_chat_id: config.telegram.owner_id?.toString() ?? "",
       });
-      // Use bot avatar as selfie reference if no explicit URL in config
-      if (telegram.avatarUrl && !selfieTool.config.referencePhotoUrl) {
-        selfieTool.setReferencePhoto(telegram.avatarUrl);
-        console.log("📸 Аватар бота загружен для селфи");
+      // Load saved reference photo if exists and no URL in config
+      const savedRef = path.join(os.homedir(), ".betsy", "reference.jpg");
+      if (!selfieTool.config.referencePhotoUrl && fs.existsSync(savedRef)) {
+        selfieTool.setReferencePhoto(savedRef);
+        console.log("📸 Референсное фото загружено из ~/.betsy/reference.jpg");
       }
       console.log("✅ Telegram бот запущен");
     } catch (err) {
