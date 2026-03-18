@@ -96,26 +96,32 @@ SelfieTool returns:
 
 ### OutgoingMessage Extension
 
-Add `mediaUrl` to `OutgoingMessage`:
+Add `mediaUrl` to the existing `OutgoingMessage` (only `mediaUrl` is new — the `mode` union already includes `'selfie'`):
 
 ```typescript
 export interface OutgoingMessage {
   text: string
   mode?: 'text' | 'voice' | 'video' | 'selfie'
-  mediaUrl?: string
+  mediaUrl?: string  // ← new
 }
 ```
 
 ### Engine Changes (`src/core/engine.ts`)
 
-After the agentic loop completes and LLM returns a text response, collect any `mediaUrl` from tool results executed during the session. Attach the last `mediaUrl` to the `OutgoingMessage`.
+The private `executeTool` method currently returns `string`. Change it to return `ToolResult` (or a new type `{ text: string; mediaUrl?: string }`), so the agentic loop can access `mediaUrl`.
 
-Implementation: track `mediaUrl` in a variable during tool execution. After `executeTool`, if the result contains `mediaUrl`, save it. When building the final `OutgoingMessage`, include it.
+In the agentic loop, after each `executeTool` call:
+- Store `result.text` in history as before (for the LLM)
+- If `result.mediaUrl` is present, save it to a `lastMediaUrl` variable
+
+When building the final `OutgoingMessage`, attach `lastMediaUrl` as `mediaUrl`.
 
 ### Telegram Delivery (`src/channels/telegram/handlers.ts`)
 
-In `deliver()`, check `response.mediaUrl`:
-- If present: download image, send via `ctx.replyWithPhoto(new InputFile(buffer))` with `response.text` as caption
+Remove the existing `mode === "selfie"` branch in `deliver()` and the `import { sendSelfie }` at the top. The `/selfie` command no longer sets `modeOverride: "selfie"` — it just passes the text through the agentic loop like any other message (the LLM will call the selfie tool).
+
+Replace with `mediaUrl`-based delivery in `deliver()`:
+- If `response.mediaUrl` is present: download image, send via `ctx.replyWithPhoto(new InputFile(buffer))` with `response.text` as caption
 - If absent: existing behavior (text/HTML)
 
 ### Browser Delivery
@@ -124,14 +130,23 @@ Include `mediaUrl` in the WebSocket message. Frontend renders `<img src={mediaUr
 
 ### Config
 
-`fal_api_key` stored in `selfies` section of `~/.betsy/config.yaml`:
+Config uses flat key-value format (same as existing config). `self_config` tool writes flat keys.
 
-```yaml
-selfies:
-  enabled: true
-  fal_api_key: "key-..."
-  reference_photo_url: "https://..."
+In `config.ts` `normalizeConfig()`, replace the existing `kie_api_key` block with:
+
+```typescript
+// selfies (fal.ai)
+if (raw.fal_api_key || raw.reference_photo_url) {
+  out.selfies = {
+    fal_api_key: raw.fal_api_key,
+    reference_photo_url: raw.reference_photo_url,
+  };
+}
 ```
+
+In `server.ts`, update the API key masking from `safe.selfies?.kie_api_key` to `safe.selfies?.fal_api_key`.
+
+The `fal_api_key` may already be present in config for video/voice — SelfieTool should check `config.selfies?.fal_api_key` first, then fall back to the fal key used by video if available.
 
 If `fal_api_key` is missing, SelfieTool returns:
 ```typescript
@@ -141,7 +156,7 @@ If `fal_api_key` is missing, SelfieTool returns:
 }
 ```
 
-The LLM then asks the user for the key in natural language and saves it via the existing `self_config` tool.
+The LLM then asks the user for the key in natural language and saves it via the existing `self_config` tool (writes `fal_api_key: <value>` as a flat key).
 
 ### System Prompt Addition
 
@@ -157,11 +172,12 @@ Add to personality instructions so the LLM knows when to use selfies proactively
 | `src/core/tools/types.ts` | Modify | Add `mediaUrl` to ToolResult |
 | `src/core/types.ts` | Modify | Add `mediaUrl` to OutgoingMessage |
 | `src/core/engine.ts` | Modify | Track and propagate mediaUrl |
-| `src/core/tools/index.ts` | Modify | Register SelfieTool |
-| `src/core/config.ts` | Modify | Normalize selfies config for fal.ai |
+| `src/index.ts` | Modify | Register SelfieTool (tool registration lives here) |
+| `src/core/config.ts` | Modify | Normalize selfies config for fal.ai (replace kie_api_key block) |
 | `src/core/prompt.ts` | Modify | Add selfie hint to system prompt |
-| `src/channels/telegram/handlers.ts` | Modify | Deliver photos via mediaUrl |
+| `src/channels/telegram/handlers.ts` | Modify | Remove old selfie branch + import, add mediaUrl delivery |
 | `src/channels/telegram/selfies.ts` | Delete | Remove old KIE.ai implementation |
+| `src/server.ts` | Modify | Update API key masking (kie_api_key → fal_api_key) |
 | `betsy.config.yaml.example` | Modify | Update selfies config example |
 
 ## What We Don't Do
