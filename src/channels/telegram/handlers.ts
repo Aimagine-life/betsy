@@ -351,7 +351,8 @@ export function registerHandlers(
       }
 
       if (event.type === "tool_start") {
-        const label = TOOL_LABELS[event.tool] ?? event.tool;
+        const label = TOOL_LABELS[event.tool];
+        if (!label) return; // skip status for unlisted tools (e.g. selfie)
         const statusText = `⏳ ${label}...`;
         if (statusMsgId) {
           ctx.api.editMessageText(chatId, statusMsgId, statusText).catch(() => {});
@@ -376,11 +377,10 @@ export function registerHandlers(
         ctx.api.deleteMessage(chatId, statusMsgId).catch(() => {});
       }
 
-      // Clear the draft (send empty to dismiss) then send final message
-      if (draftId && draftSupported) {
+      // Clear the draft — but skip if response has media (photo will carry the text)
+      if (draftId && draftSupported && !response.mediaUrl) {
         try {
           await sendDraft(ctx.api, chatId, draftId, response.text);
-          // Small delay so user sees the complete draft before the final message
           await sleep(300);
         } catch { /* ignore */ }
       }
