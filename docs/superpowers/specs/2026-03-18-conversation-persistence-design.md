@@ -109,7 +109,7 @@ ${oldMessages.map(m => `${m.role}: ${extractText(m.content)}`).join("\n")}
 
 // Always use chat(), not chatStream() — compaction is internal, no user-facing streaming
 const response = await llm.chat([{ role: "user", content: promptText }]);
-const newSummary = response.text?.trim();
+const newSummary = response.text.trim(); // text is always string per LLMResponse type
 
 // Guard: if LLM returned empty summary, abort compaction entirely.
 // This prevents permanent context loss from LLM anomalies.
@@ -238,7 +238,8 @@ if (!compactionAttempted && response.usage && response.usage.promptTokens > cont
 1. LLM call → response
 2. [EXISTING] Hard stop: if promptTokens > MAX_PROMPT_TOKENS (50k) → return immediately
    - This fires on ALL turns (tool-use and terminal) as absolute safety
-   - At this point, assistant tool-call message is NOT yet saved to DB
+   - The hard-stop assistant message (line 136) IS saved to DB via saveMessage (see Section 2)
+   - The assistant tool-call message (line 153-157) is NOT yet saved — it's saved after the compaction check
 3. Check stopReason:
    a. Terminal (end_turn) → push + saveMessage → return response
       → fire background compaction if promptTokens > contextBudget
@@ -305,7 +306,7 @@ Note: zod's `.default(40000)` would cover this at parse time even without the `n
      const count = db.prepare("SELECT COUNT(*) as cnt FROM conversations").get() as { cnt: number };
      if (count.cnt === 0) {
        db.exec("DROP TABLE IF EXISTS conversations");
-       // Recreate with new schema (same as in db.exec block above)
+       // Recreate with new schema — intentionally no IF NOT EXISTS since DROP above guarantees table is gone
        db.exec(`CREATE TABLE conversations (...new schema...)`);
      } else {
        // Use db.transaction() for atomic migration
@@ -372,7 +373,7 @@ On restart:
   - Guarantees a clean message sequence for the LLM: starts with `user`, no orphaned tool results, no dangling tool-call assistant messages.
 - **Images in messages:** `saveMessage` receives extracted text only; callers must extract text from `ContentPart[]` before calling. Images are ephemeral (base64 too large for DB).
 - **Crash between history.push and saveMessage:** Tolerable — at most one message lost at crash boundary. On restart, DB is the source of truth. Write-to-DB-first is not worth the complexity since crashes are rare.
-- **userId collision across channels:** Currently safe — Telegram uses numeric chat IDs, browser uses `"owner"`. Known gap: `channel` is written to DB but `loadHistory` filters only by `user_id`. TODO: if a new channel is added that could produce colliding userIds, add `channel` to `loadHistory` filter. For now, `user_id` alone is sufficient.
+- **userId collision across channels:** Currently safe — Telegram uses numeric chat IDs, browser uses `"owner"`. Known gap: `channel` is written to DB but `loadHistory` filters only by `user_id`. Note: `"owner"` is a static string used by the browser channel — if a future Telegram config also maps the owner to the string `"owner"` instead of a numeric ID, histories would silently merge. TODO: scope userId as `channel:userId` (e.g., `telegram:123456`, `browser:owner`) to prevent collisions. For now, `user_id` alone is sufficient since Telegram always uses numeric IDs.
 - **Scheduler `getHistory()` after restart:** Fixed — `getHistory()` now calls `hydrateUser()` which loads from DB if the in-memory map is empty (see Section 1, "Update `getHistory()`").
 - **Summarization language:** The compaction prompt is hardcoded in Russian ("Пиши на русском"). This matches the project's UI language (per CLAUDE.md). If Betsy is ever used for non-Russian conversations, this should be made configurable. Accepted assumption for now.
 - **Streaming draft on compaction `continue`:** When compaction fires during a tool-use turn with streaming enabled, the Telegram handler's `streamText` may already contain partial text from the pre-compaction LLM call. After `continue`, the next LLM call appends more text via the same `streamChunk` callback. This is acceptable — tool-use turns typically have minimal/empty `response.text`, so the visual impact is negligible. If it becomes a problem, the engine could reset the streaming state before `continue`, but this is out of scope.
