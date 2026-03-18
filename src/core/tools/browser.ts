@@ -84,7 +84,9 @@ export class BrowserTool implements Tool {
       this.browser = await chromium.launch({ headless: true });
     }
 
-    this.context = await this.browser.newContext();
+    this.context = await this.browser.newContext({
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    });
     this.page = await this.context.newPage();
     this.page.setDefaultTimeout(TIMEOUT);
     return this.page;
@@ -92,7 +94,9 @@ export class BrowserTool implements Tool {
 
   private async getText(page: Page, url: string | undefined): Promise<ToolResult> {
     if (!url) return { success: false, output: "", error: "Missing required parameter: url" };
-    await page.goto(url, { timeout: TIMEOUT, waitUntil: "domcontentloaded" });
+    await page.goto(url, { timeout: TIMEOUT, waitUntil: "load" });
+    // Wait a bit for JS-rendered content (SPAs like Wildberries)
+    await page.waitForTimeout(2000);
     const text = await page.textContent("body") ?? "";
     const cleaned = text.replace(/\s+/g, " ").trim();
     return { success: true, output: truncate(cleaned, MAX_TEXT_CHARS) };
@@ -100,7 +104,8 @@ export class BrowserTool implements Tool {
 
   private async screenshot(page: Page, url: string | undefined): Promise<ToolResult> {
     if (!url) return { success: false, output: "", error: "Missing required parameter: url" };
-    await page.goto(url, { timeout: TIMEOUT, waitUntil: "domcontentloaded" });
+    await page.goto(url, { timeout: TIMEOUT, waitUntil: "load" });
+    await page.waitForTimeout(2000);
     const buffer = await page.screenshot({ fullPage: true });
     return { success: true, output: buffer.toString("base64") };
   }

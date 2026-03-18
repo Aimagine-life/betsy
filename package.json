@@ -27,6 +27,7 @@
     "viem": "^2.23.0",
     "ws": "^8.19.0",
     "yaml": "^2.7.0",
+    "playwright": "^1.58.2",
     "zod": "^3.24.0"
   },
   "devDependencies": {
@@ -38,7 +39,6 @@
     "@types/uuid": "^10.0.0",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.3.4",
-    "playwright": "^1.58.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwindcss": "^4.0.0",
