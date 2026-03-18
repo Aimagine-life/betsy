@@ -26,16 +26,17 @@ Persist conversation messages to SQLite and implement LLM-powered compaction wit
 The existing `conversations` table has no data and lacks required columns. On startup:
 1. Check `PRAGMA table_info(conversations)` for `user_id` column
 2. If missing: check `SELECT COUNT(*) FROM conversations`
-   - If count = 0: `DROP TABLE conversations` + recreate with new schema
-   - If count > 0: add all missing columns via ALTER TABLE:
+   - If count = 0: `DROP TABLE IF EXISTS conversations` + recreate with new schema
+   - If count > 0: wrap ALL migration DDL in a single transaction to prevent partial migration on crash:
      ```sql
+     BEGIN;
      ALTER TABLE conversations ADD COLUMN user_id TEXT NOT NULL DEFAULT '';
      ALTER TABLE conversations ADD COLUMN tool_call_id TEXT;
      ALTER TABLE conversations ADD COLUMN tool_calls TEXT;
-     -- Clean up orphaned rows with no user identity:
      DELETE FROM conversations WHERE user_id = '';
+     COMMIT;
      ```
-3. This guards against data loss on deploy → rollback → redeploy cycles. Rows with `user_id = ''` are deleted immediately after migration since they have no usable identity and would otherwise accumulate forever.
+3. This guards against data loss on deploy → rollback → redeploy cycles. The transaction ensures either all columns are added or none. `DROP TABLE IF EXISTS` prevents crash on concurrent double-startup. Rows with `user_id = ''` are deleted immediately since they have no usable identity.
 
 ### Tables
 
@@ -71,7 +72,7 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 
 **`loadHistory(userId, limit = 40): { messages: LLMMessage[], summary: string | null }`**
 - SELECT last N messages from `conversations` ordered by timestamp
-- Reconstruct `LLMMessage[]` format (parse `toolCalls` from JSON, restore `toolCallId`)
+- Reconstruct `LLMMessage[]` format (parse `toolCalls` from JSON with try/catch per row — skip rows with corrupt JSON, restore `toolCallId`)
 - Also loads summary via `loadSummary(userId)` and returns it separately
 - For user messages with `ContentPart[]` (images): only text part is stored, images are ephemeral
 - Returns messages + summary separately — summary is injected into system prompt by the engine, NOT as a message in history
@@ -90,7 +91,7 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 
 **Algorithm:**
 1. Load current summary from DB via `loadSummary(userId)`
-2. Load all messages from DB for this user, ordered by timestamp
+2. Load ALL messages from DB for this user via a dedicated unbounded query: `SELECT * FROM conversations WHERE user_id = ? ORDER BY timestamp ASC` (NOT via `loadHistory` which has a limit=40 cap). This ensures all accumulated messages are available for summarization.
 3. Split: old part (first half) and fresh part (second half, ~20 recent messages kept intact)
 4. Build the summarization prompt as an `LLMMessage[]` array and call `llm.chat()`:
 
@@ -108,7 +109,10 @@ ${oldMessages.map(m => `${m.role}: ${extractText(m.content)}`).join("\n")}
 
 const response = await llm.chat([{ role: "user", content: promptText }]);
 const newSummary = response.text;
+const estimatedTokens = response.usage?.completionTokens ?? Math.ceil(newSummary.length / 4);
 ```
+
+`estimatedTokens` is computed from the LLM response's `completionTokens` if available, otherwise approximated as `length / 4`. This value is stored in `conversation_summaries.token_estimate` for informational/diagnostic purposes (e.g., monitoring summary growth over time). It is NOT used in the compaction trigger — the trigger relies solely on the real `promptTokens` from the main conversation LLM call.
 
 5. **In a single SQLite transaction:**
    - `saveSummary(userId, newSummary, estimatedTokens)`
@@ -277,10 +281,12 @@ On restart:
 
 - **First message ever:** No history in DB, no summary — works like today
 - **Restart with no history:** `loadHistory` returns empty messages + null summary — same as fresh start
-- **Compaction fails (LLM error):** Catch and fall back to splice trimming as safety net. DB transaction never starts, so no partial state.
+- **Compaction fails (LLM error):** Catch error in the engine's compaction block. Since `compactionAttempted = true` prevents retry, the engine continues with the current (oversized) history. The `MAX_PROMPT_TOKENS = 50_000` hard stop remains as a safety net — if the next LLM response still exceeds 50k tokens, the engine stops gracefully (existing behavior). DB transaction never starts on LLM failure, so no partial state.
 - **Tool messages without parent assistant:** `loadHistory` trims the window start forward to the first `role: "user"` message. This handles both directions: orphaned tool results without a parent assistant, and tool results at the window boundary whose parent was trimmed off by the limit. Guarantees a clean message sequence for the LLM.
 - **Images in messages:** `saveMessage` receives extracted text only; callers must extract text from `ContentPart[]` before calling. Images are ephemeral (base64 too large for DB).
 - **Crash between history.push and saveMessage:** Tolerable — at most one message lost at crash boundary. On restart, DB is the source of truth. Write-to-DB-first is not worth the complexity since crashes are rare.
 - **userId collision across channels:** Currently safe — Telegram uses numeric chat IDs, browser uses `"owner"`. Known gap: `channel` is written to DB but `loadHistory` filters only by `user_id`. TODO: if a new channel is added that could produce colliding userIds, add `channel` to `loadHistory` filter. For now, `user_id` alone is sufficient.
 - **Scheduler `getHistory()` after restart:** `getHistory()` reads from in-memory `this.histories` which is only hydrated on first `process()` call. After restart, if the scheduler calls `getHistory()` before the user sends a message, it returns `[]`. Fix: `getHistory()` should call `loadHistory()` from DB if the in-memory map is empty for the given userId.
 - **Summarization language:** The compaction prompt is hardcoded in Russian ("Пиши на русском"). This matches the project's UI language (per CLAUDE.md). If Betsy is ever used for non-Russian conversations, this should be made configurable. Accepted assumption for now.
+- **Streaming draft on compaction `continue`:** When compaction fires during a tool-use turn with streaming enabled, the Telegram handler's `streamText` may already contain partial text from the pre-compaction LLM call. After `continue`, the next LLM call appends more text via the same `streamChunk` callback. This is acceptable — tool-use turns typically have minimal/empty `response.text`, so the visual impact is negligible. If it becomes a problem, the engine could reset the streaming state before `continue`, but this is out of scope.
+- **`extractText` utility:** Used in `compaction.ts` to convert `LLMMessage.content` (string or ContentPart[]) to a plain string. Defined as a local helper in `compaction.ts` — not shared, since it's only needed there.
