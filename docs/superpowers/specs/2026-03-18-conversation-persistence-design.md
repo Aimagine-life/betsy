@@ -52,15 +52,17 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 
 ### Functions
 
-**`saveMessage(userId, channel, role, content, toolCallId?, toolCalls?)`**
-- INSERT into `conversations`
+**`saveMessage(userId, channel, role, content, toolCallId?, toolCalls?): number`**
+- INSERT into `conversations`, returns the row `id`
+- `content` must always be a string — callers extract text from `ContentPart[]` before calling
 - `toolCalls` serialized as JSON string
 
-**`loadHistory(userId, limit = 40): LLMMessage[]`**
+**`loadHistory(userId, limit = 40): { messages: LLMMessage[], summary: string | null }`**
 - SELECT last N messages from `conversations` ordered by timestamp
 - Reconstruct `LLMMessage[]` format (parse `toolCalls` from JSON, restore `toolCallId`)
-- If a summary exists, prepend it as a system-like message at the start
-- Returns ready-to-use message array for the engine
+- Also loads summary via `loadSummary(userId)` and returns it separately
+- For user messages with `ContentPart[]` (images): only text part is stored, images are ephemeral
+- Returns messages + summary separately — summary is injected into system prompt by the engine, NOT as a message in history
 
 **`saveSummary(userId, summary, tokenEstimate)`**
 - UPSERT into `conversation_summaries`
@@ -70,14 +72,15 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 
 ## New Module: `src/core/memory/compaction.ts`
 
-### Function: `compactHistory(userId, history, llm, contextBudget)`
+### Function: `compactHistory(userId, llm, channel)`
 
-**Trigger:** Called when `response.usage.promptTokens > contextBudget` after an LLM response.
+**Trigger:** Called when `response.usage.promptTokens > contextBudget` after an LLM response during a tool-use turn.
 
 **Algorithm:**
 1. Load current summary from DB via `loadSummary(userId)`
-2. Split history in half: old part (first half) and fresh part (second half, ~20 recent messages kept intact)
-3. Send to fast_model with prompt:
+2. Load all messages from DB for this user, ordered by timestamp
+3. Split: old part (first half) and fresh part (second half, ~20 recent messages kept intact)
+4. Send to fast_model with prompt:
 
 ```
 Ты — помощник, который суммаризирует разговоры.
@@ -92,9 +95,12 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 Пиши кратко, но не теряй важную информацию. Пиши на русском.
 ```
 
-4. Save updated summary via `saveSummary(userId, newSummary, estimatedTokens)`
-5. Delete compacted messages from `conversations` table (those that were summarized)
+5. **In a single SQLite transaction:**
+   - `saveSummary(userId, newSummary, estimatedTokens)`
+   - `DELETE FROM conversations WHERE user_id = ? AND id <= ?` (using the max `id` of the old part)
 6. Return — the engine will reload history via `loadHistory()` which will include the summary
+
+**Transaction safety:** Steps 5a and 5b are wrapped in `db.transaction(...)` to prevent partial state on crash. If the LLM call in step 4 fails, the transaction never starts and history remains intact — fallback to splice trimming.
 
 ## Changes to `src/core/engine.ts`
 
@@ -103,10 +109,13 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 Replace empty array initialization with SQLite load:
 ```typescript
 if (!this.histories.has(userId)) {
-  const restored = loadHistory(userId);
-  this.histories.set(userId, restored);
+  const { messages, summary } = loadHistory(userId);
+  this.histories.set(userId, messages);
+  // summary is stored separately and injected into system prompt
 }
 ```
+
+Summary injection: in `buildPromptWithMemory`, if a summary exists for the user, append it to the system prompt (similar to how knowledge context is appended). This avoids having two `system` role messages in the LLM request.
 
 ### 2. Message persistence
 
@@ -120,18 +129,26 @@ After every `history.push(...)`, call `saveMessage()`:
 
 Current behavior: stop processing when `promptTokens > 50000`.
 
-New behavior:
+New behavior — compaction only triggers during tool-use turns (where `continue` makes sense). On terminal turns, the response is already generated and returned.
+
 ```typescript
+// After LLM response, before tool execution:
 if (response.usage && response.usage.promptTokens > contextBudget) {
-  await compactHistory(userId, history, this.deps.llm.fast(), contextBudget);
-  const restored = loadHistory(userId);
-  this.histories.set(userId, restored);
-  history = restored; // update local reference
+  await compactHistory(userId, this.deps.llm.fast(), channel);
+  const { messages, summary } = loadHistory(userId);
+  this.histories.set(userId, messages);
+  // update local reference — declare `history` with `let` instead of `const`
+  history = messages;
+  // update summary in prompt context for next iteration
   continue; // retry the turn with compacted context
 }
 ```
 
-Keep `MAX_PROMPT_TOKENS` as an absolute safety limit above `contextBudget` (e.g., at 50k if budget is 40k).
+**Important:** Change `const history = ...` (line 63) to `let history = ...` to allow reassignment after compaction.
+
+**Placement:** This check runs ONLY when `stopReason === "tool_use"` — between the tool-use check and tool execution. If the turn is terminal (no tool calls), the response has already been generated correctly and is returned as-is. Compaction will happen on the next user message if needed.
+
+Keep `MAX_PROMPT_TOKENS = 50_000` as an absolute safety hard stop above `contextBudget` (fallback if compaction fails).
 
 ### 4. Remove splice trimming (line 88-90)
 
@@ -139,10 +156,12 @@ Delete `history.splice(0, history.length - MAX_HISTORY)` — compaction now mana
 
 ## Changes to `src/core/config.ts`
 
-Add `context_budget` to config schema:
+Add `context_budget` to the `memory` section of config schema (alongside existing `max_knowledge`, `study_interval_min`):
 ```typescript
+// Inside memorySchema:
 context_budget: z.number().optional().default(40000)
 ```
+Update `normalizeConfig()` to pass `context_budget` through if present in flat config format.
 
 ## Changes to `src/core/memory/db.ts`
 
@@ -188,7 +207,9 @@ On restart:
 ## Edge Cases
 
 - **First message ever:** No history in DB, no summary — works like today
-- **Restart with no history:** `loadHistory` returns empty array — same as fresh start
-- **Compaction fails (LLM error):** Catch and fall back to splice trimming as safety net
+- **Restart with no history:** `loadHistory` returns empty messages + null summary — same as fresh start
+- **Compaction fails (LLM error):** Catch and fall back to splice trimming as safety net. DB transaction never starts, so no partial state.
 - **Tool messages without parent assistant:** Skip orphaned tool results during `loadHistory`
-- **Images in messages:** Store text content only; images are ephemeral (base64 too large for DB)
+- **Images in messages:** `saveMessage` receives extracted text only; callers must extract text from `ContentPart[]` before calling. Images are ephemeral (base64 too large for DB).
+- **Crash between history.push and saveMessage:** Tolerable — at most one message lost at crash boundary. On restart, DB is the source of truth. Write-to-DB-first is not worth the complexity since crashes are rare.
+- **userId collision across channels:** Currently safe — Telegram uses numeric chat IDs, browser uses `"owner"`. If this changes in the future, `loadHistory` should filter by `(user_id, channel)` pair. For now, `user_id` alone is sufficient.
