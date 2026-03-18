@@ -73,6 +73,10 @@ const configSchema = z.object({
   video: z.record(z.string(), z.any()).optional(),
   selfies: z.record(z.string(), z.any()).optional(),
   sync_so: z.record(z.string(), z.any()).optional(),
+  google: z.object({
+    api_key: z.string(),
+    cx: z.string(),
+  }).optional(),
 }).passthrough(); // Allow extra fields
 
 export type BetsyConfig = z.infer<typeof configSchema>;
