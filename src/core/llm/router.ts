@@ -101,17 +101,27 @@ export class LLMRouter {
       },
 
       chatStream: async (messages: LLMMessage[], onChunk: StreamCallback, tools?: ToolDefinition[]): Promise<LLMResponse> => {
-        try {
-          const response = await getDelegate().chatStream(messages, onChunk, tools);
-          return this.attachNotification(response);
-        } catch (err) {
-          if (isBillingError(err) || isRateLimitError(err)) {
-            // Switch model for next call, but do NOT retry mid-stream
-            // (chunks may have already been sent to user via onChunk)
-            await this.handleLLMError(err);
+        const maxAttempts = this.fallbackModels.length + 1;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          let chunksDelivered = false;
+          try {
+            const response = await getDelegate().chatStream(
+              messages,
+              (chunk) => { chunksDelivered = true; onChunk(chunk); },
+              tools,
+            );
+            return this.attachNotification(response);
+          } catch (err) {
+            if (isBillingError(err) || isRateLimitError(err)) {
+              const switched = await this.handleLLMError(err);
+              if (switched && !chunksDelivered) {
+                continue; // safe to retry — no chunks were sent yet
+              }
+            }
+            throw err;
           }
-          throw err;
         }
+        throw new Error("All LLM fallback attempts exhausted");
       },
     };
   }

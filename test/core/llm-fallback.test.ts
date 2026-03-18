@@ -155,17 +155,17 @@ describe("LLMRouter proxy fallback with mocks", () => {
     router.destroy();
   });
 
-  it("does not retry chatStream mid-stream, only switches model for next call", async () => {
+  it("retries chatStream on pre-stream billing error (no chunks sent)", async () => {
     const router = createTestRouter({
       primaryChat: async () => {
         throw new OpenAI.APIError(402, { message: "Payment required" }, "Payment required", {});
       },
+      fallbackChat: async () => mockResponse("stream fallback works"),
     });
 
     const fast = router.fast();
-    await expect(
-      fast.chatStream([{ role: "user", content: "hello" }], () => {}, [])
-    ).rejects.toThrow();
+    const result = await fast.chatStream([{ role: "user", content: "hello" }], () => {}, []);
+    expect(result.text).toContain("stream fallback works");
     expect(router.mode).toBe("degraded");
     router.destroy();
   });
