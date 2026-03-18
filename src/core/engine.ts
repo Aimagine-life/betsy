@@ -1,6 +1,7 @@
 import type { IncomingMessage, OutgoingMessage, ProgressCallback } from "./types.js";
 import type { LLMClient, LLMMessage, ToolDefinition } from "./llm/types.js";
 import type { ToolRegistry } from "./tools/registry.js";
+import type { ToolResult } from "./tools/types.js";
 import { buildSystemPrompt, type PromptConfig } from "./prompt.js";
 import { searchKnowledge } from "./memory/knowledge.js";
 
@@ -46,6 +47,8 @@ export class Engine {
     const tools = this.buildToolDefinitions();
 
     try {
+      let lastMediaUrl: string | undefined;
+
       // Agentic loop: LLM → tool calls → execute → repeat
       for (let turn = 0; turn < MAX_TURNS; turn++) {
         onProgress?.({ type: "thinking" });
@@ -68,7 +71,7 @@ export class Engine {
         if (response.stopReason !== "tool_use" || !response.toolCalls?.length) {
           const text = response.text || "...";
           history.push({ role: "assistant", content: text });
-          return { text };
+          return { text, mediaUrl: lastMediaUrl };
         }
 
         // Add assistant message with tool calls to history
@@ -83,15 +86,21 @@ export class Engine {
           onProgress?.({ type: "tool_start", tool: tc.name, turn: turn + 1 });
 
           const result = await this.executeTool(tc.name, tc.arguments);
-          const success = !result.startsWith("Error:");
+          const resultText = result.success
+            ? result.output
+            : `Error: ${result.error || result.output}`;
+
+          if (result.mediaUrl) {
+            lastMediaUrl = result.mediaUrl;
+          }
 
           history.push({
             role: "tool",
-            content: result,
+            content: resultText,
             toolCallId: tc.id,
           });
 
-          onProgress?.({ type: "tool_end", tool: tc.name, turn: turn + 1, success });
+          onProgress?.({ type: "tool_end", tool: tc.name, turn: turn + 1, success: result.success });
         }
 
         onProgress?.({ type: "turn_complete", turn: turn + 1, totalTurns: MAX_TURNS });
@@ -129,20 +138,17 @@ export class Engine {
     return prompt;
   }
 
-  /** Execute a single tool by name. Returns result string for the LLM. */
-  private async executeTool(name: string, args: Record<string, unknown>): Promise<string> {
+  /** Execute a single tool by name. Returns full ToolResult. */
+  private async executeTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
     const tool = this.deps.tools.get(name);
     if (!tool) {
-      return `Error: unknown tool "${name}"`;
+      return { success: false, output: "", error: `unknown tool "${name}"` };
     }
 
     try {
-      const result = await tool.execute(args);
-      return result.success
-        ? result.output
-        : `Error: ${result.error || result.output}`;
+      return await tool.execute(args);
     } catch (err) {
-      return `Error: ${err instanceof Error ? err.message : String(err)}`;
+      return { success: false, output: "", error: err instanceof Error ? err.message : String(err) };
     }
   }
 
