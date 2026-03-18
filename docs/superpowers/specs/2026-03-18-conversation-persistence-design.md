@@ -27,7 +27,12 @@ The existing `conversations` table has no data and lacks required columns. On st
 1. Check `PRAGMA table_info(conversations)` for `user_id` column
 2. If missing: check `SELECT COUNT(*) FROM conversations`
    - If count = 0: `DROP TABLE conversations` + recreate with new schema
-   - If count > 0: `ALTER TABLE conversations ADD COLUMN user_id TEXT NOT NULL DEFAULT ''` (and add other missing columns)
+   - If count > 0: add all missing columns via ALTER TABLE:
+     ```sql
+     ALTER TABLE conversations ADD COLUMN user_id TEXT NOT NULL DEFAULT '';
+     ALTER TABLE conversations ADD COLUMN tool_call_id TEXT;
+     ALTER TABLE conversations ADD COLUMN tool_calls TEXT;
+     ```
 3. This guards against data loss on deploy → rollback → redeploy cycles
 
 ### Tables
@@ -114,6 +119,14 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 Replace empty array initialization with SQLite load:
 ```typescript
 if (!this.histories.has(userId)) {
+  this.hydrateUser(userId); // shared helper for process() and getHistory()
+}
+```
+
+**Helper method `hydrateUser(userId)`:** Loads history + summary from DB and populates both `this.histories` and `this.summaries`. Called from both `process()` and `getHistory()` to ensure scheduler also gets DB-backed history after restart.
+
+```typescript
+private hydrateUser(userId: string): void {
   const { messages, summary } = loadHistory(userId);
   this.histories.set(userId, messages);
   if (summary) this.summaries.set(userId, summary);
@@ -149,20 +162,26 @@ New behavior — compaction only triggers during tool-use turns (where `continue
 
 ```typescript
 // After LLM response, before tool execution:
-if (response.usage && response.usage.promptTokens > contextBudget) {
+if (!compactionAttempted && response.usage && response.usage.promptTokens > contextBudget) {
+  compactionAttempted = true; // prevent tight loop on repeated failure
   await compactHistory(userId, this.deps.llm.fast());
   const { messages, summary } = loadHistory(userId);
   this.histories.set(userId, messages);
   history = messages; // requires `let` declaration
   if (summary) this.summaries.set(userId, summary);
-  // rebuild system prompt with updated summary on next loop iteration
+  // rebuild system prompt with updated summary
+  systemPrompt = this.buildPromptWithMemory(msg.text, userId);
   continue; // retry the turn with compacted context
 }
 ```
 
+**Compaction cooldown:** A `let compactionAttempted = false` flag is set at the start of `process()`. Once compaction fires (success or failure), the flag prevents re-triggering on subsequent tool-use turns within the same `process()` call. This prevents an API-burning tight loop if compaction fails to bring tokens under budget.
+
+**System prompt rebuild:** `systemPrompt` must be rebuilt after compaction because it is constructed before the `for` loop (line 66). After compaction updates `this.summaries`, we call `buildPromptWithMemory` again to pick up the new summary. This requires changing `const systemPrompt` to `let systemPrompt` (line 66).
+
 **Note on `continue` behavior:** The assistant tool-call message that triggered compaction is already saved to DB (from step 2 persistence). After `loadHistory` reloads, that message is included in the fresh history. The `continue` re-runs the LLM with compacted context, which will produce new tool calls. This is correct — the previous tool calls were never executed (compaction fires before tool execution).
 
-**Important:** Change `const history = ...` (line 63) to `let history = ...` to allow reassignment after compaction.
+**Important declarations:** Change both `const history = ...` (line 63) and `const systemPrompt = ...` (line 66) to `let` to allow reassignment after compaction.
 
 **Placement:** This check runs ONLY when `stopReason === "tool_use"` — between the tool-use check and tool execution. If the turn is terminal (no tool calls), the response has already been generated correctly and is returned as-is. Compaction will happen on the next user message if needed.
 
@@ -234,4 +253,6 @@ On restart:
 - **Tool messages without parent assistant:** Skip orphaned tool results during `loadHistory`
 - **Images in messages:** `saveMessage` receives extracted text only; callers must extract text from `ContentPart[]` before calling. Images are ephemeral (base64 too large for DB).
 - **Crash between history.push and saveMessage:** Tolerable — at most one message lost at crash boundary. On restart, DB is the source of truth. Write-to-DB-first is not worth the complexity since crashes are rare.
-- **userId collision across channels:** Currently safe — Telegram uses numeric chat IDs, browser uses `"owner"`. If this changes in the future, `loadHistory` should filter by `(user_id, channel)` pair. For now, `user_id` alone is sufficient.
+- **userId collision across channels:** Currently safe — Telegram uses numeric chat IDs, browser uses `"owner"`. Known gap: `channel` is written to DB but `loadHistory` filters only by `user_id`. TODO: if a new channel is added that could produce colliding userIds, add `channel` to `loadHistory` filter. For now, `user_id` alone is sufficient.
+- **Scheduler `getHistory()` after restart:** `getHistory()` reads from in-memory `this.histories` which is only hydrated on first `process()` call. After restart, if the scheduler calls `getHistory()` before the user sends a message, it returns `[]`. Fix: `getHistory()` should call `loadHistory()` from DB if the in-memory map is empty for the given userId.
+- **Summarization language:** The compaction prompt is hardcoded in Russian ("Пиши на русском"). This matches the project's UI language (per CLAUDE.md). If Betsy is ever used for non-Russian conversations, this should be made configurable. Accepted assumption for now.
