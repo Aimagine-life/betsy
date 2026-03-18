@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import crypto from "node:crypto";
 import { loadConfig, getPersonality, getLLMApiKey, getAgentName } from "../../src/core/config.js";
 
 const TEST_DIR = path.join(os.tmpdir(), `betsy-config-test-${Date.now()}`);
@@ -64,5 +65,13 @@ llm:
     const config = loadConfig(configPath);
     expect(config).not.toBeNull();
     expect(getLLMApiKey(config!)).toBe("sk-new-key");
+  });
+
+  it("includes context_budget in memory schema with default 40000", () => {
+    const tmpPath = path.join(os.tmpdir(), `betsy-cfg-${crypto.randomUUID()}.yaml`);
+    fs.writeFileSync(tmpPath, "agent:\n  name: Test\nllm:\n  provider: openrouter\n  api_key: test\n");
+    const config = loadConfig(tmpPath);
+    fs.unlinkSync(tmpPath);
+    expect(config?.memory?.context_budget).toBe(40000);
   });
 });
