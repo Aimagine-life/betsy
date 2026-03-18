@@ -245,15 +245,22 @@ export class Engine {
         // Check 2: Per-tool limit (scoped to current process() call only)
         const overused = [...toolCallCounts.entries()].find(([, count]) => count > MAX_SAME_TOOL);
         if (overused) {
-          const text = `Инструмент "${overused[0]}" использован ${overused[1]} раз. Попробую ответить тем, что есть.`;
-          history.push({ role: "assistant", content: text });
-          saveMessage(userId, msg.channelName, "assistant", text);
           console.log(JSON.stringify({
             tag: "engine:limit",
             reason: "tool_limit",
             tool: overused[0],
             count: overused[1],
           }));
+          // Give LLM one final chance to summarize what it found (no tools)
+          history.push({ role: "user", content: `Лимит использования инструмента "${overused[0]}" достигнут. Ответь на основе уже полученной информации.` });
+          const finalMessages: LLMMessage[] = [
+            { role: "system", content: systemPrompt },
+            ...history,
+          ];
+          const finalResponse = await llm.chat(finalMessages);
+          const text = finalResponse.text || `Инструмент "${overused[0]}" использован ${overused[1]} раз, но не удалось сформировать ответ.`;
+          history.push({ role: "assistant", content: text });
+          saveMessage(userId, msg.channelName, "assistant", text);
           return { text, mediaUrl: lastMediaUrl };
         }
 
