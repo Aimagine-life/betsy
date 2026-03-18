@@ -71,6 +71,7 @@ export class SelfieTool implements Tool {
       : detectMode(context);
 
     const prompt = buildPrompt(context, mode);
+    console.log(`📸 Selfie: mode=${mode}, ref=${this.config.referencePhotoUrl?.slice(0, 80)}, prompt=${prompt.slice(0, 80)}`);
 
     try {
       const response = await fetch(FAL_ENDPOINT, {
