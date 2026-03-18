@@ -5,6 +5,20 @@ import type { ToolResult } from "./tools/types.js";
 import { buildSystemPrompt, type PromptConfig } from "./prompt.js";
 import { searchKnowledge } from "./memory/knowledge.js";
 
+function historyChars(history: LLMMessage[]): number {
+  let total = 0;
+  for (const m of history) {
+    if (typeof m.content === "string") {
+      total += m.content.length;
+    } else {
+      for (const p of m.content) {
+        if (p.type === "text") total += p.text.length;
+      }
+    }
+  }
+  return total;
+}
+
 const MAX_TURNS = 20;
 const MAX_HISTORY = 40;
 
@@ -93,9 +107,25 @@ export class Engine {
           ? (chunk: string) => onProgress({ type: "text_chunk", chunk })
           : undefined;
 
+        const histSize = historyChars(history);
+        const llmStart = Date.now();
         const response = streamChunk
           ? await llm.chatStream(messages, streamChunk, tools.length ? tools : undefined)
           : await llm.chat(messages, tools.length ? tools : undefined);
+        const llmMs = Date.now() - llmStart;
+
+        console.log(JSON.stringify({
+          tag: "engine",
+          turn: turn + 1,
+          llmMs,
+          promptTokens: response.usage?.promptTokens,
+          completionTokens: response.usage?.completionTokens,
+          historyMessages: history.length,
+          historyChars: histSize,
+          reasoning: response.text?.slice(0, 200),
+          stopReason: response.stopReason,
+          toolCalls: response.toolCalls?.map(t => t.name),
+        }));
 
         // If LLM didn't request tools, return the text response
         if (response.stopReason !== "tool_use" || !response.toolCalls?.length) {
@@ -115,10 +145,23 @@ export class Engine {
         for (const tc of response.toolCalls) {
           onProgress?.({ type: "tool_start", tool: tc.name, turn: turn + 1 });
 
+          const toolStart = Date.now();
           const result = await this.executeTool(tc.name, tc.arguments);
+          const toolMs = Date.now() - toolStart;
+
           const resultText = result.success
             ? result.output
             : `Error: ${result.error || result.output}`;
+
+          console.log(JSON.stringify({
+            tag: "engine:tool",
+            turn: turn + 1,
+            tool: tc.name,
+            params: tc.arguments,
+            success: result.success,
+            outputChars: resultText.length,
+            toolMs,
+          }));
 
           if (result.mediaUrl) {
             lastMediaUrl = result.mediaUrl;
@@ -134,7 +177,6 @@ export class Engine {
         }
 
         onProgress?.({ type: "turn_complete", turn: turn + 1, totalTurns: MAX_TURNS });
-        console.log(`🔧 Turn ${turn + 1}: executed ${response.toolCalls.map(t => t.name).join(", ")}`);
       }
 
       // Max turns exceeded
