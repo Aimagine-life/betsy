@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 **Algorithm:**
 1. Load current summary from DB via `loadSummary(userId)`
 2. Load ALL messages from DB for this user via a dedicated unbounded query: `SELECT * FROM conversations WHERE user_id = ? ORDER BY timestamp ASC` (NOT via `loadHistory` which has a limit=40 cap). This ensures all accumulated messages are available for summarization.
-3. Split: old part (first half) and fresh part (second half, ~20 recent messages kept intact)
+3. Split at a **turn boundary**: find the midpoint by message count, then advance forward to the next `role: "user"` message. This ensures the split never lands mid-turn (between an assistant tool-call message and its tool results). Old part = everything before the split, fresh part = everything from the split onward.
 4. Build the summarization prompt as an `LLMMessage[]` array and call `llm.chat()`:
 
 ```typescript
@@ -108,7 +108,14 @@ ${oldMessages.map(m => `${m.role}: ${extractText(m.content)}`).join("\n")}
 Пиши кратко, но не теряй важную информацию. Пиши на русском.`;
 
 const response = await llm.chat([{ role: "user", content: promptText }]);
-const newSummary = response.text;
+const newSummary = response.text?.trim();
+
+// Guard: if LLM returned empty summary, abort compaction entirely.
+// This prevents permanent context loss from LLM anomalies.
+if (!newSummary) {
+  throw new Error("Compaction aborted: LLM returned empty summary");
+}
+
 const estimatedTokens = response.usage?.completionTokens ?? Math.ceil(newSummary.length / 4);
 ```
 
@@ -154,10 +161,11 @@ if (!this.histories.has(userId)) {
 }
 ```
 
-**Helper method `hydrateUser(userId)`:** Loads history + summary from DB and populates both `this.histories` and `this.summaries`. Called from both `process()` and `getHistory()` to ensure scheduler also gets DB-backed history after restart.
+**Helper method `hydrateUser(userId)`:** Loads history + summary from DB and populates both `this.histories` and `this.summaries`. Called from both `process()` and `getHistory()` to ensure scheduler also gets DB-backed history after restart. **Guarded by `!this.histories.has(userId)`** — never overwrites in-session history.
 
 ```typescript
 private hydrateUser(userId: string): void {
+  if (this.histories.has(userId)) return; // already hydrated, don't overwrite
   const { messages, summary } = loadHistory(userId);
   this.histories.set(userId, messages);
   if (summary) this.summaries.set(userId, summary);
@@ -217,6 +225,20 @@ if (!compactionAttempted && response.usage && response.usage.promptTokens > cont
 **Placement:** This check runs ONLY when `stopReason === "tool_use"` — between the tool-use check and tool execution. If the turn is terminal (no tool calls), the response has already been generated correctly and is returned as-is. Compaction will happen on the next user message if needed.
 
 Keep `MAX_PROMPT_TOKENS = 50_000` as an absolute safety hard stop above `contextBudget` (fallback if compaction fails).
+
+**Terminal-turn compaction:** For terminal turns (no tool calls) where `promptTokens > contextBudget`, compaction does NOT fire immediately (no `continue` possible — the response is already generated). Instead, run compaction **after returning the response** as a fire-and-forget cleanup:
+
+```typescript
+// After returning the terminal response:
+if (response.usage && response.usage.promptTokens > contextBudget) {
+  // async, don't await — next message will benefit from compacted context
+  compactHistory(userId, this.deps.llm.fast()).catch(err =>
+    console.error("Background compaction failed:", err)
+  );
+}
+```
+
+This ensures terminal-turn-heavy workloads don't grow from `contextBudget` to `MAX_PROMPT_TOKENS` without ever compacting. The default gap of 10k tokens (40k budget vs 50k hard stop) provides headroom while background compaction runs.
 
 ### 4. Remove splice trimming (line 88-90)
 
