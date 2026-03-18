@@ -63,6 +63,7 @@ async function main() {
         api_key: llmConfig.fast.api_key,
         fast_model: llmConfig.fast.model,
         strong_model: llmConfig.strong?.model ?? llmConfig.fast.model,
+        fallback_models: llmConfig.fallback_models,
       });
     } else {
       llm = new LLMRouter({
@@ -70,6 +71,7 @@ async function main() {
         api_key: llmConfig.api_key,
         fast_model: llmConfig.fast_model,
         strong_model: llmConfig.strong_model,
+        fallback_models: llmConfig.fallback_models,
       });
     }
     console.log("✅ LLM подключён");
@@ -214,13 +216,14 @@ async function main() {
     execFileCb(opener, [`http://localhost:${port}`], () => {});
   }
 
-  setupShutdown(server, wss, scheduler);
+  setupShutdown(server, wss, scheduler, llm ?? undefined);
 }
 
-function setupShutdown(server: any, wss: any, scheduler?: SchedulerService) {
+function setupShutdown(server: any, wss: any, scheduler?: SchedulerService, router?: LLMRouter) {
   const shutdown = () => {
     console.log("\nЗавершение работы...");
     scheduler?.stop();
+    router?.destroy();
     wss.close();
     server.close();
     process.exit(0);
