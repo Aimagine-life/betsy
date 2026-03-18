@@ -12,6 +12,21 @@ const DEFAULT_FALLBACKS = [
 
 const BALANCE_CHECK_INTERVAL = 10 * 60 * 1000; // 10 minutes
 const FALLBACK_RETRY_DELAY = 1000; // 1 second between fallback attempts (fixed, not exponential)
+const PER_MODEL_TIMEOUT = 60_000; // 60 seconds max per single model attempt
+
+class ModelTimeoutError extends Error {
+  constructor() { super("Model timed out"); }
+}
+
+function withModelTimeout<T>(promise: Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new ModelTimeoutError()), PER_MODEL_TIMEOUT);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
 
 export interface LLMRouterConfig {
   provider: string;
@@ -81,50 +96,52 @@ export class LLMRouter {
     }
   }
 
+  private isRetryable(err: unknown): boolean {
+    return isBillingError(err) || isRateLimitError(err) || err instanceof ModelTimeoutError;
+  }
+
   private createProxy(getDelegate: () => LLMClient): LLMClient {
     return {
       chat: async (messages: LLMMessage[], tools?: ToolDefinition[]): Promise<LLMResponse> => {
-        const maxAttempts = this.fallbackModels.length + 1; // main + all fallbacks
+        // Try up to 3 full rounds of all models before giving up
+        const maxAttempts = (this.fallbackModels.length + 1) * 5;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
           try {
-            const response = await getDelegate().chat(messages, tools);
+            const response = await withModelTimeout(getDelegate().chat(messages, tools));
             return this.attachNotification(response);
           } catch (err) {
-            if (isBillingError(err) || isRateLimitError(err)) {
-              const switched = await this.handleLLMError(err);
-              if (switched) {
-                continue; // retry with new delegate
-              }
+            if (this.isRetryable(err)) {
+              console.log(`⚠️ LLM: attempt ${attempt + 1} failed: ${err instanceof Error ? err.message : err}`);
+              await this.handleLLMError(err);
+              continue;
             }
             throw err;
           }
         }
-        // Should not reach here, but just in case
-        throw new Error("All LLM fallback attempts exhausted");
+        throw new Error("All LLM models unavailable after 5 rounds");
       },
 
       chatStream: async (messages: LLMMessage[], onChunk: StreamCallback, tools?: ToolDefinition[]): Promise<LLMResponse> => {
-        const maxAttempts = this.fallbackModels.length + 1;
+        const maxAttempts = (this.fallbackModels.length + 1) * 5;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
           let chunksDelivered = false;
           try {
-            const response = await getDelegate().chatStream(
+            const response = await withModelTimeout(getDelegate().chatStream(
               messages,
               (chunk) => { chunksDelivered = true; onChunk(chunk); },
               tools,
-            );
+            ));
             return this.attachNotification(response);
           } catch (err) {
-            if (isBillingError(err) || isRateLimitError(err)) {
-              const switched = await this.handleLLMError(err);
-              if (switched && !chunksDelivered) {
-                continue; // safe to retry — no chunks were sent yet
-              }
+            if (this.isRetryable(err)) {
+              console.log(`⚠️ LLM: stream attempt ${attempt + 1} failed: ${err instanceof Error ? err.message : err}`);
+              await this.handleLLMError(err);
+              if (!chunksDelivered) continue;
             }
             throw err;
           }
         }
-        throw new Error("All LLM fallback attempts exhausted");
+        throw new Error("All LLM models unavailable after 5 rounds");
       },
     };
   }
@@ -165,11 +182,10 @@ export class LLMRouter {
   private async tryNextFallback(): Promise<boolean> {
     this.currentFallbackIndex++;
     if (this.currentFallbackIndex >= this.fallbackModels.length) {
-      // All exhausted — reset to first for next attempt
+      // All exhausted — wrap around to first, pause before retrying
       this.currentFallbackIndex = 0;
-      this.switchDelegates(this.fallbackModels[0]);
-      console.log("⚠️ LLM: все fallback модели исчерпаны");
-      return false;
+      console.log("⚠️ LLM: все fallback модели пройдены, начинаю новый круг через 5с");
+      await new Promise((r) => setTimeout(r, 5000));
     }
 
     const model = this.fallbackModels[this.currentFallbackIndex];
