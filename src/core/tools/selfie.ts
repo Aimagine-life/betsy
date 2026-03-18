@@ -119,6 +119,7 @@ export class SelfieTool implements Tool {
 
       if (!response.ok) {
         const errText = await response.text();
+        console.error(`📸 Selfie fal.ai error ${response.status}: ${errText.slice(0, 300)}`);
         return {
           success: false,
           output: `Ошибка fal.ai: ${response.status}`,
@@ -132,15 +133,18 @@ export class SelfieTool implements Tool {
 
       const imageUrl = data.images?.[0]?.url;
       if (!imageUrl) {
+        console.error("📸 Selfie: no image in fal.ai response", JSON.stringify(data).slice(0, 300));
         return { success: false, output: "fal.ai не вернул изображение", error: "No image in response" };
       }
 
+      console.log(`📸 Selfie OK: ${imageUrl.slice(0, 80)}`);
       return {
         success: true,
         output: "Селфи сгенерировано",
         mediaUrl: imageUrl,
       };
     } catch (err) {
+      console.error(`📸 Selfie exception: ${err instanceof Error ? err.message : err}`);
       return {
         success: false,
         output: "Ошибка при генерации селфи",
