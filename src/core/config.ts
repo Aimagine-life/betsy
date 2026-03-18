@@ -42,6 +42,11 @@ const configSchema = z.object({
     personality: personalitySchema,
   }).default({ name: "Betsy" }),
 
+  owner: z.object({
+    name: z.string().optional(),
+    facts: z.array(z.string()).default([]),
+  }).optional(),
+
   security: z.object({
     password_hash: z.string().optional(),
     tools: z.object({

@@ -117,6 +117,7 @@ async function main() {
         responseStyle: personality.style,
         customInstructions: personality.customInstructions,
       },
+      owner: config.owner,
     },
     tools,
     contextBudget: config.memory?.context_budget ?? 40000,

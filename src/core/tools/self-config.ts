@@ -88,6 +88,25 @@ function handleSet(params: Record<string, unknown>): ToolResult {
   return { success: true, output: `Set ${key.trim()} = ${JSON.stringify(coerced)}` };
 }
 
+function handleAppend(params: Record<string, unknown>): ToolResult {
+  const key = params.key;
+  if (typeof key !== "string" || !key.trim()) {
+    return { success: false, output: "Missing required parameter: key", error: "missing_param" };
+  }
+  const value = params.value;
+  if (value === undefined || value === null) {
+    return { success: false, output: "Missing required parameter: value", error: "missing_param" };
+  }
+
+  const config = loadConfig() ?? { agent: { name: "Betsy" } } as BetsyConfig;
+  const existing = getNestedValue(config as unknown as Record<string, unknown>, key.trim());
+  const arr = Array.isArray(existing) ? existing : [];
+  arr.push(typeof value === "string" ? value : String(value));
+  setNestedValue(config as unknown as Record<string, unknown>, key.trim(), arr);
+  saveConfig(config);
+  return { success: true, output: `Appended "${value}" to ${key.trim()} (now ${arr.length} items)` };
+}
+
 function handleList(): ToolResult {
   const config = loadConfig();
   if (!config) {
@@ -106,11 +125,14 @@ export const selfConfigTool: Tool = {
   name: "self_config",
   description:
     "Read or write Betsy's own configuration stored in ~/.betsy/config.yaml. " +
-    "Uses dot-notation for nested keys (e.g. agent.name, agent.gender, memory.max_knowledge). " +
+    "Uses dot-notation for nested keys. " +
+    "Key examples: agent.name, agent.gender (female/male/neutral), " +
+    "agent.personality.tone, agent.personality.style, agent.personality.custom_instructions, " +
+    "owner.name (owner's name), owner.facts (array of facts about owner). " +
     "action=get retrieves a single key, action=set writes a key-value pair, " +
     "action=list shows all configuration entries.",
   parameters: [
-    { name: "action", type: "string", description: "One of: get, set, list", required: true },
+    { name: "action", type: "string", description: "One of: get, set, append, list. Use append to add items to array fields like owner.facts", required: true },
     { name: "key", type: "string", description: "Config key in dot-notation, e.g. agent.gender (required for get/set)" },
     { name: "value", type: "string", description: "Config value (required for set)" },
   ],
@@ -126,6 +148,8 @@ export const selfConfigTool: Tool = {
         return handleGet(params);
       case "set":
         return handleSet(params);
+      case "append":
+        return handleAppend(params);
       case "list":
         return handleList();
       default:
