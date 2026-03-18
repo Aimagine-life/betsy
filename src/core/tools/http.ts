@@ -1,8 +1,15 @@
 import type { Tool, ToolResult } from "./types.js"
 
+function truncate(text: string, max: number): string {
+  if (text.length <= max) return text
+  return text.slice(0, max) + `\n\n[truncated, showing first ${max} of ${text.length} chars]`
+}
+
 export class HttpTool implements Tool {
+  static readonly MAX_OUTPUT_CHARS = 8000
+
   name = "http"
-  description = "Make HTTP requests"
+  description = "Make HTTP API requests (JSON/REST). For browsing websites use the 'web' or 'browser' tool."
   parameters = [
     { name: "url", type: "string", description: "The URL to request", required: true },
     { name: "method", type: "string", description: "HTTP method: GET, POST, PUT, or DELETE" },
@@ -44,10 +51,10 @@ export class HttpTool implements Tool {
       const text = await response.text()
 
       if (!response.ok) {
-        return { success: false, output: text, error: `HTTP ${response.status} ${response.statusText}` }
+        return { success: false, output: truncate(text, HttpTool.MAX_OUTPUT_CHARS), error: `HTTP ${response.status} ${response.statusText}` }
       }
 
-      return { success: true, output: text }
+      return { success: true, output: truncate(text, HttpTool.MAX_OUTPUT_CHARS) }
     } catch (err) {
       return { success: false, output: "", error: (err as Error).message }
     }
