@@ -67,9 +67,19 @@ Send a voice message — she replies with a voice message. Via MiniMax (built-in
 
 Betsy sends video circles with lip-sync — lips move in sync with speech. Like a real video call, but in Telegram.
 
+<p align="center">
+  <img src="https://i.ibb.co/hRGwfzBc/0319.gif" alt="Betsy video circles in Telegram" width="350" />
+</p>
+
 ### 📸 Selfies
 
-Ask and she'll send one. Sometimes she'll send one on her own. Generated via fal.ai with consistent appearance from a reference photo. She's diligent — sends proof of her work.
+Ask and she'll send one. Sometimes she'll send one on her own. Generated via fal.ai with consistent appearance from a reference photo. She works out and takes care of herself — here's proof:
+
+<p align="center">
+  <img src="https://i.ibb.co/qFR5dGXC/photo-2026-03-18-11-19-30.jpg" alt="Betsy works out — proof" width="400" />
+</p>
+
+She's also diligent — sends proof of her work:
 
 <p align="center">
   <img src="https://i.ibb.co/8gCfNnW9/photo-2026-03-18-22-45-29.jpg" alt="Betsy sends proof of work" width="400" />
