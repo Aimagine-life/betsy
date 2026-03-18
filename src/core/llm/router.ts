@@ -7,6 +7,7 @@ const DEFAULT_FALLBACKS = [
   "nvidia/nemotron-3-super-120b-a12b:free",
   "mistralai/mistral-small-3.1-24b-instruct:free",
   "meta-llama/llama-3.3-70b-instruct:free",
+  "openrouter/free",
 ];
 
 const BALANCE_CHECK_INTERVAL = 10 * 60 * 1000; // 10 minutes
