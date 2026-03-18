@@ -9,6 +9,7 @@ export interface ToolResult {
   success: boolean
   output: string
   error?: string
+  mediaUrl?: string
 }
 
 export interface Tool {

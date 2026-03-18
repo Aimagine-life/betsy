@@ -9,6 +9,7 @@ export interface IncomingMessage {
 export interface OutgoingMessage {
   text: string
   mode?: 'text' | 'voice' | 'video' | 'selfie'
+  mediaUrl?: string
 }
 
 export interface LLMMessage {
