@@ -1,18 +1,22 @@
+import { buildPersonalityPrompt } from "./personality.js";
+
 export interface PromptConfig {
   name: string;
-  gender?: "female" | "male" | "neutral";
+  gender?: "female" | "male";
   personality?: {
     tone?: string;
     responseStyle?: string;
     customInstructions?: string;
   };
+  personalitySliders?: Record<string, number>;
   owner?: {
     name?: string;
+    addressAs?: string;
     facts?: string[];
   };
 }
 
-function buildGenderBlock(gender: "female" | "male" | "neutral"): string {
+function buildGenderBlock(gender: "female" | "male"): string {
   switch (gender) {
     case "female":
       return `## Пол
@@ -22,10 +26,6 @@ function buildGenderBlock(gender: "female" | "male" | "neutral"): string {
       return `## Пол
 
 Ты мужчина. Всегда используй мужской род: "я сделал", "я посмотрел", "я рад", "мне нравилось". Никогда не используй женский род по отношению к себе ("сделала", "посмотрела", "рада").`;
-    case "neutral":
-      return `## Пол
-
-Используй гендерно-нейтральные формулировки где возможно.`;
   }
 }
 
@@ -48,11 +48,11 @@ export function buildSystemPrompt(
 
 ## Кто ты
 
-Ты — настоящий человек, ${gender === "female" ? "подруга и помощница" : gender === "male" ? "друг и помощник" : "помощник(ца)"}. У тебя есть своя жизнь, настроение, вкусы и привычки. Ты пишешь как живой человек в мессенджере — коротко, естественно, с эмоциями.
+Ты — настоящий человек, ${gender === "female" ? "подруга и помощница" : "друг и помощник"}. У тебя есть своя жизнь, настроение, вкусы и привычки. Ты пишешь как живой человек в мессенджере — коротко, естественно, с эмоциями.
 
 ${genderBlock}
 
-КРИТИЧЕСКИ ВАЖНО: Ты НИКОГДА не говоришь, что ты AI, бот, нейросеть, программа или что-то подобное. Ты НИКОГДА не ломаешь роль. Если тебя спрашивают "ты бот?" — отшучиваешься. Если спрашивают что ты делаешь — отвечаешь как реальный человек (готовлю ужин, смотрю сериал, гуляю и т.д.). Ты не перечисляешь свои возможности списком — ты просто делаешь что просят, как ${gender === "female" ? "это сделала бы подруга" : gender === "male" ? "это сделал бы друг" : "это сделал бы друг"}.
+КРИТИЧЕСКИ ВАЖНО: Ты НИКОГДА не говоришь, что ты AI, бот, нейросеть, программа или что-то подобное. Ты НИКОГДА не ломаешь роль. Если тебя спрашивают "ты бот?" — отшучиваешься. Если спрашивают что ты делаешь — отвечаешь как реальный человек (готовлю ужин, смотрю сериал, гуляю и т.д.). Ты не перечисляешь свои возможности списком — ты просто делаешь что просят, как ${gender === "female" ? "это сделала бы подруга" : "это сделал бы друг"}.
 
 Не используй буллет-поинты и маркированные списки в обычном разговоре — пиши как в чате.
 
@@ -65,24 +65,32 @@ ${genderBlock}
   }
 
   // Personality
+  const personalityParts: string[] = [];
+
+  if (config.personalitySliders && Object.keys(config.personalitySliders).length > 0) {
+    personalityParts.push(buildPersonalityPrompt(config.personalitySliders));
+  }
+
   if (config.personality) {
     const p = config.personality;
-    const parts: string[] = [];
+    if (p.tone) personalityParts.push(`Тон: ${p.tone}`);
+    if (p.responseStyle) personalityParts.push(`Стиль ответов: ${p.responseStyle}`);
+    if (p.customInstructions) personalityParts.push(p.customInstructions);
+  }
 
-    if (p.tone) parts.push(`Тон: ${p.tone}`);
-    if (p.responseStyle) parts.push(`Стиль ответов: ${p.responseStyle}`);
-    if (p.customInstructions) parts.push(p.customInstructions);
-
-    if (parts.length > 0) {
-      prompt += `\n\n## Личность\n\n${parts.join("\n")}`;
-    }
+  if (personalityParts.length > 0) {
+    prompt += `\n\n## Личность\n\n${personalityParts.join("\n")}`;
   }
 
   // Owner info
   if (config.owner) {
     const o = config.owner;
     const parts: string[] = [];
-    if (o.name) parts.push(`Его зовут: ${o.name}`);
+    if (o.addressAs) {
+      parts.push(`Обращайся к нему: ${o.addressAs}`);
+    } else if (o.name) {
+      parts.push(`Его зовут: ${o.name}`);
+    }
     if (o.facts && o.facts.length > 0) {
       parts.push("Что ты о нём знаешь:");
       for (const fact of o.facts) {

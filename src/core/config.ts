@@ -8,9 +8,24 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 const personalitySchema = z.union([
   z.string(),
   z.object({
+    // Legacy fields
     tone: z.string().optional(),
     style: z.string().optional(),
     custom_instructions: z.string().optional(),
+    // New slider fields (0-4)
+    formality: z.number().min(0).max(4).optional(),
+    emotionality: z.number().min(0).max(4).optional(),
+    humor: z.number().min(0).max(4).optional(),
+    confidence: z.number().min(0).max(4).optional(),
+    response_length: z.number().min(0).max(4).optional(),
+    structure: z.number().min(0).max(4).optional(),
+    emoji: z.number().min(0).max(4).optional(),
+    examples: z.number().min(0).max(4).optional(),
+    friendliness: z.number().min(0).max(4).optional(),
+    initiative: z.number().min(0).max(4).optional(),
+    curiosity: z.number().min(0).max(4).optional(),
+    empathy: z.number().min(0).max(4).optional(),
+    criticism: z.number().min(0).max(4).optional(),
   }),
 ]).optional();
 
@@ -40,12 +55,13 @@ const llmSchema = z.union([
 const configSchema = z.object({
   agent: z.object({
     name: z.string().default("Betsy"),
-    gender: z.enum(["female", "male", "neutral"]).default("female"),
+    gender: z.enum(["female", "male"]).default("female"),
     personality: personalitySchema,
   }).default({ name: "Betsy" }),
 
   owner: z.object({
     name: z.string().optional(),
+    address_as: z.string().optional(),
     facts: z.array(z.string()).default([]),
   }).optional(),
 
@@ -255,6 +271,18 @@ export function getPersonality(config: BetsyConfig): {
     style: p.style,
     customInstructions: p.custom_instructions,
   };
+}
+
+export function getPersonalitySliders(config: BetsyConfig): Record<string, number> {
+  const p = config.agent?.personality;
+  if (!p || typeof p === "string") return {};
+  const result: Record<string, number> = {};
+  const keys = ["formality","emotionality","humor","confidence","response_length","structure","emoji","examples","friendliness","initiative","curiosity","empathy","criticism"];
+  for (const k of keys) {
+    const v = (p as Record<string, unknown>)[k];
+    if (typeof v === "number") result[k] = v;
+  }
+  return result;
 }
 
 export { configSchema };

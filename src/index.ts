@@ -2,7 +2,7 @@ import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
 import { createServer } from "./server.js";
-import { isConfigured, loadConfig, saveConfig, getAgentName, getPersonality, getLLMApiKey } from "./core/config.js";
+import { isConfigured, loadConfig, saveConfig, getAgentName, getPersonality, getPersonalitySliders, getLLMApiKey } from "./core/config.js";
 import { TelegramChannel } from "./channels/telegram/index.js";
 import { LLMRouter } from "./core/llm/router.js";
 import { Engine } from "./core/engine.js";
@@ -119,6 +119,7 @@ async function main() {
         responseStyle: personality.style,
         customInstructions: personality.customInstructions,
       },
+      personalitySliders: getPersonalitySliders(config),
       owner: config.owner,
     },
     tools,
