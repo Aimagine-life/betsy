@@ -95,10 +95,14 @@ export function getDB(dbPath?: string): Database.Database {
 
   // Migration: upgrade old conversations table if needed
   const cols = db.pragma("table_info(conversations)") as Array<{ name: string }>;
-  const hasUserId = cols.some((c: { name: string }) => c.name === "user_id");
-  if (!hasUserId) {
+  const colNames = cols.map((c: { name: string }) => c.name);
+  const hasCorrectSchema = colNames.includes("user_id") && colNames.includes("channel");
+  if (!hasCorrectSchema) {
+    // Old schema may have chat_id instead of channel, or missing user_id/tool columns
+    // Safest approach: drop and recreate (data is either empty or unrecoverable)
     const count = (db.prepare("SELECT COUNT(*) as cnt FROM conversations").get() as { cnt: number }).cnt;
-    if (count === 0) {
+    if (count === 0 || !colNames.includes("channel")) {
+      // Empty table or incompatible schema (e.g., chat_id instead of channel) — recreate
       db.exec("DROP TABLE IF EXISTS conversations");
       db.exec(`CREATE TABLE IF NOT EXISTS conversations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,10 +115,11 @@ export function getDB(dbPath?: string): Database.Database {
         timestamp INTEGER NOT NULL DEFAULT (unixepoch())
       )`);
     } else {
+      // Has channel but missing user_id/tool columns — ALTER TABLE
       db.transaction(() => {
-        db.prepare("ALTER TABLE conversations ADD COLUMN user_id TEXT NOT NULL DEFAULT ''").run();
-        db.prepare("ALTER TABLE conversations ADD COLUMN tool_call_id TEXT").run();
-        db.prepare("ALTER TABLE conversations ADD COLUMN tool_calls TEXT").run();
+        if (!colNames.includes("user_id")) db.prepare("ALTER TABLE conversations ADD COLUMN user_id TEXT NOT NULL DEFAULT ''").run();
+        if (!colNames.includes("tool_call_id")) db.prepare("ALTER TABLE conversations ADD COLUMN tool_call_id TEXT").run();
+        if (!colNames.includes("tool_calls")) db.prepare("ALTER TABLE conversations ADD COLUMN tool_calls TEXT").run();
         db.prepare("DELETE FROM conversations WHERE user_id = ''").run();
       })();
     }
