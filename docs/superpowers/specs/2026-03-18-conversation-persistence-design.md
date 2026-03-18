@@ -161,7 +161,16 @@ if (!this.histories.has(userId)) {
 }
 ```
 
-**Helper method `hydrateUser(userId)`:** Loads history + summary from DB and populates both `this.histories` and `this.summaries`. Called from both `process()` and `getHistory()` to ensure scheduler also gets DB-backed history after restart. **Guarded by `!this.histories.has(userId)`** — never overwrites in-session history.
+**Helper method `hydrateUser(userId)`:** Loads history + summary from DB and populates both `this.histories` and `this.summaries`. **Guarded by `!this.histories.has(userId)`** — never overwrites in-session history.
+
+**Update `getHistory()`** to also call `hydrateUser` so the scheduler gets DB-backed history after restart:
+```typescript
+getHistory(userId: string): Array<{ role: string; content: string }> {
+  this.hydrateUser(userId); // hydrate from DB if not yet loaded
+  const history = this.histories.get(userId);
+  // ... rest unchanged
+}
+```
 
 ```typescript
 private hydrateUser(userId: string): void {
@@ -231,14 +240,20 @@ Keep `MAX_PROMPT_TOKENS = 50_000` as an absolute safety hard stop above `context
 ```typescript
 // After returning the terminal response:
 if (response.usage && response.usage.promptTokens > contextBudget) {
-  // async, don't await — next message will benefit from compacted context
-  compactHistory(userId, this.deps.llm.fast()).catch(err =>
-    console.error("Background compaction failed:", err)
-  );
+  compactHistory(userId, this.deps.llm.fast())
+    .then(() => {
+      // Update in-memory state so next message benefits immediately
+      const { messages, summary } = loadHistory(userId);
+      this.histories.set(userId, messages);
+      if (summary) this.summaries.set(userId, summary);
+    })
+    .catch(err => console.error("Background compaction failed:", err));
 }
 ```
 
-This ensures terminal-turn-heavy workloads don't grow from `contextBudget` to `MAX_PROMPT_TOKENS` without ever compacting. The default gap of 10k tokens (40k budget vs 50k hard stop) provides headroom while background compaction runs.
+This ensures terminal-turn-heavy workloads don't grow from `contextBudget` to `MAX_PROMPT_TOKENS` without ever compacting. After background compaction completes, both `this.histories` and `this.summaries` are updated so the next message uses the compacted context and new summary. The default gap of 10k tokens (40k budget vs 50k hard stop) provides headroom while background compaction runs.
+
+**Race safety:** If a new message arrives while background compaction is running, `process()` uses the current in-memory history (pre-compaction, large but valid). When background compaction finishes and overwrites `this.histories`, the new message's response is already returned. The next message will use the compacted state. No data corruption — at worst one extra oversized LLM call.
 
 ### 4. Remove splice trimming (line 88-90)
 
