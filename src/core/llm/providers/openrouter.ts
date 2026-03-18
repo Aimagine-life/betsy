@@ -62,6 +62,50 @@ function buildResponse(
   };
 }
 
+const BILLING_KEYWORDS = ["insufficient_quota", "credits", "billing", "payment", "exceeded your current quota"];
+
+/** Check if an error indicates the account balance is exhausted. */
+export function isBillingError(err: unknown): boolean {
+  if (!(err instanceof OpenAI.APIError)) return false;
+  if (err.status === 402) return true;
+  // 429, 400, 403 with billing-related message
+  if (err.status === 429 || err.status === 400 || err.status === 403) {
+    const msg = (err.message ?? "").toLowerCase();
+    return BILLING_KEYWORDS.some((kw) => msg.includes(kw));
+  }
+  return false;
+}
+
+/** Check if an error is a rate limit or model-not-found (treat as "try next model"). */
+export function isRateLimitError(err: unknown): boolean {
+  if (!(err instanceof OpenAI.APIError)) return false;
+  if (err.status === 404) return true; // dead model
+  if (err.status === 429 && !isBillingError(err)) return true;
+  return false;
+}
+
+export interface BalanceInfo {
+  hasBalance: boolean;
+  usage: number;
+  limit: number;
+}
+
+/** Check OpenRouter account balance via API. */
+export async function checkBalance(apiKey: string): Promise<BalanceInfo> {
+  const res = await fetch("https://openrouter.ai/api/v1/auth/key", {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) throw new Error(`Balance check failed: ${res.status}`);
+  const data = (await res.json()) as { data?: { usage?: number; limit?: number } };
+  const usage = data.data?.usage ?? 0;
+  const limit = data.data?.limit ?? 0;
+  return {
+    hasBalance: limit > 0 && usage < limit,
+    usage,
+    limit,
+  };
+}
+
 export function createOpenRouterClient(opts: OpenRouterOptions): LLMClient {
   const client = new OpenAI({
     apiKey: opts.apiKey,
