@@ -23,7 +23,12 @@ Persist conversation messages to SQLite and implement LLM-powered compaction wit
 
 ### Migration
 
-The existing `conversations` table has no data and lacks required columns. On startup, check `PRAGMA table_info(conversations)` — if `user_id` column is missing, drop and recreate.
+The existing `conversations` table has no data and lacks required columns. On startup:
+1. Check `PRAGMA table_info(conversations)` for `user_id` column
+2. If missing: check `SELECT COUNT(*) FROM conversations`
+   - If count = 0: `DROP TABLE conversations` + recreate with new schema
+   - If count > 0: `ALTER TABLE conversations ADD COLUMN user_id TEXT NOT NULL DEFAULT ''` (and add other missing columns)
+3. This guards against data loss on deploy → rollback → redeploy cycles
 
 ### Tables
 
@@ -72,7 +77,7 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 
 ## New Module: `src/core/memory/compaction.ts`
 
-### Function: `compactHistory(userId, llm, channel)`
+### Function: `compactHistory(userId, llm)`
 
 **Trigger:** Called when `response.usage.promptTokens > contextBudget` after an LLM response during a tool-use turn.
 
@@ -111,11 +116,22 @@ Replace empty array initialization with SQLite load:
 if (!this.histories.has(userId)) {
   const { messages, summary } = loadHistory(userId);
   this.histories.set(userId, messages);
-  // summary is stored separately and injected into system prompt
+  if (summary) this.summaries.set(userId, summary);
 }
 ```
 
-Summary injection: in `buildPromptWithMemory`, if a summary exists for the user, append it to the system prompt (similar to how knowledge context is appended). This avoids having two `system` role messages in the LLM request.
+**Summary cache:** Add `private summaries: Map<string, string> = new Map()` to Engine. This cache is updated on:
+- Initial load from DB (above)
+- After compaction (reload summary from DB)
+
+**Summary injection:** In `buildPromptWithMemory`, check `this.summaries.get(userId)` and append to system prompt:
+```typescript
+const summary = this.summaries.get(userId);
+if (summary) {
+  prompt += `\n\n## Краткое содержание предыдущего разговора\n\n${summary}`;
+}
+```
+This is analogous to how knowledge context is already appended. No second `system` message in the LLM request.
 
 ### 2. Message persistence
 
@@ -134,15 +150,17 @@ New behavior — compaction only triggers during tool-use turns (where `continue
 ```typescript
 // After LLM response, before tool execution:
 if (response.usage && response.usage.promptTokens > contextBudget) {
-  await compactHistory(userId, this.deps.llm.fast(), channel);
+  await compactHistory(userId, this.deps.llm.fast());
   const { messages, summary } = loadHistory(userId);
   this.histories.set(userId, messages);
-  // update local reference — declare `history` with `let` instead of `const`
-  history = messages;
-  // update summary in prompt context for next iteration
+  history = messages; // requires `let` declaration
+  if (summary) this.summaries.set(userId, summary);
+  // rebuild system prompt with updated summary on next loop iteration
   continue; // retry the turn with compacted context
 }
 ```
+
+**Note on `continue` behavior:** The assistant tool-call message that triggered compaction is already saved to DB (from step 2 persistence). After `loadHistory` reloads, that message is included in the fresh history. The `continue` re-runs the LLM with compacted context, which will produce new tool calls. This is correct — the previous tool calls were never executed (compaction fires before tool execution).
 
 **Important:** Change `const history = ...` (line 63) to `let history = ...` to allow reassignment after compaction.
 
@@ -152,7 +170,7 @@ Keep `MAX_PROMPT_TOKENS = 50_000` as an absolute safety hard stop above `context
 
 ### 4. Remove splice trimming (line 88-90)
 
-Delete `history.splice(0, history.length - MAX_HISTORY)` — compaction now manages context size by tokens, not message count.
+Delete `history.splice(0, history.length - MAX_HISTORY)` — compaction now manages context size by tokens, not message count. The `limit = 40` in `loadHistory` serves as a secondary guard to prevent loading unbounded messages from DB on restart (before the first compaction runs). This is intentional — it caps DB reads, not in-memory growth.
 
 ## Changes to `src/core/config.ts`
 
@@ -161,13 +179,17 @@ Add `context_budget` to the `memory` section of config schema (alongside existin
 // Inside memorySchema:
 context_budget: z.number().optional().default(40000)
 ```
-Update `normalizeConfig()` to pass `context_budget` through if present in flat config format.
+Update `normalizeConfig()` to pass `context_budget` through in the flat config `out.memory` block:
+```typescript
+// Inside normalizeConfig, flat format memory block:
+context_budget: raw.context_budget ?? 40000,
+```
 
 ## Changes to `src/core/memory/db.ts`
 
 Add migration logic and new table:
 1. Check `PRAGMA table_info(conversations)` for `user_id` column
-2. If missing: `DROP TABLE conversations` + recreate with new schema
+2. If missing: check row count — drop only if empty, otherwise ALTER TABLE (see Migration section above)
 3. Add `CREATE TABLE IF NOT EXISTS conversation_summaries`
 
 ## Data Flow
