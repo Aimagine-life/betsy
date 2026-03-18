@@ -118,6 +118,7 @@ async function main() {
       },
     },
     tools,
+    contextBudget: config.memory?.context_budget ?? 40000,
   }) : null;
 
   // Start HTTP server
