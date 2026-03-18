@@ -361,7 +361,7 @@ function handleConfigGet(res: http.ServerResponse, ctx: ServerContext) {
   if (safe.telegram?.token) safe.telegram.token = "***";
   if (safe.voice?.openai_key) safe.voice.openai_key = "***";
   if (safe.sync_so?.api_key) safe.sync_so.api_key = "***";
-  if (safe.selfies?.kie_api_key) safe.selfies.kie_api_key = "***";
+  if (safe.selfies?.fal_api_key) safe.selfies.fal_api_key = "***";
 
   json(res, { configured: true, ...safe });
 }

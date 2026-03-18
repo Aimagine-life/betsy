@@ -151,11 +151,10 @@ function normalizeConfig(raw: Record<string, unknown>): Record<string, unknown> 
     };
   }
 
-  // selfies
-  if (raw.kie_api_key) {
+  // selfies (fal.ai)
+  if (raw.fal_api_key || raw.reference_photo_url) {
     out.selfies = {
-      kie_api_key: raw.kie_api_key,
-      reference_photo: raw.reference_photo,
+      fal_api_key: raw.fal_api_key,
       reference_photo_url: raw.reference_photo_url,
     };
   }
