@@ -103,10 +103,12 @@ export function createOpenRouterClient(opts: OpenRouterOptions): LLMClient {
         messages: toOpenAIMessages(messages),
         ...(tools?.length ? { tools } : {}),
         stream: true,
+        stream_options: { include_usage: true },
       });
 
       let text = "";
       let finishReason: string | null = null;
+      let usage: { prompt_tokens: number; completion_tokens: number } | undefined;
       // Accumulate tool calls from stream deltas
       const toolCallMap = new Map<number, { id: string; name: string; args: string }>();
 
@@ -137,6 +139,10 @@ export function createOpenRouterClient(opts: OpenRouterOptions): LLMClient {
         if (chunk.choices[0]?.finish_reason) {
           finishReason = chunk.choices[0].finish_reason;
         }
+
+        if (chunk.usage) {
+          usage = { prompt_tokens: chunk.usage.prompt_tokens, completion_tokens: chunk.usage.completion_tokens };
+        }
       }
 
       const toolCalls = toolCallMap.size > 0
@@ -147,7 +153,7 @@ export function createOpenRouterClient(opts: OpenRouterOptions): LLMClient {
           }))
         : undefined;
 
-      return buildResponse(text, finishReason, toolCalls);
+      return buildResponse(text, finishReason, toolCalls, usage);
     },
   };
 }
