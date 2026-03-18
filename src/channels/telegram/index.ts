@@ -2,7 +2,7 @@ import { Bot } from "grammy";
 import { autoRetry } from "@grammyjs/auto-retry";
 import type { Channel, MessageHandler } from "../types.js";
 import type { OutgoingMessage } from "../../core/types.js";
-import { registerHandlers, type SetReferencePhotoFn } from "./handlers.js";
+import { registerHandlers, type SetReferencePhotoFn, type OnOwnerClaimedFn } from "./handlers.js";
 
 /**
  * Telegram channel adapter.
@@ -19,12 +19,16 @@ export class TelegramChannel implements Channel {
   private ownerChatId: number | null = null;
   private _avatarUrl: string | null = null;
   private _onSetReferencePhoto: SetReferencePhotoFn | undefined;
+  private _onOwnerClaimed: OnOwnerClaimedFn | undefined;
 
   /** Bot avatar URL fetched at startup. */
   get avatarUrl(): string | null { return this._avatarUrl; }
 
   /** Set callback for /setphoto command. */
   set onSetReferencePhoto(fn: SetReferencePhotoFn) { this._onSetReferencePhoto = fn; }
+
+  /** Set callback for first-user ownership claim. */
+  set onOwnerClaimed(fn: OnOwnerClaimedFn) { this._onOwnerClaimed = fn; }
 
   async start(config: Record<string, string>): Promise<void> {
     this.bot = new Bot(config.token);
@@ -48,7 +52,7 @@ export class TelegramChannel implements Channel {
       // Non-critical — selfie will use config fallback
     }
 
-    registerHandlers(this.bot, this.handler, this.ownerChatId, this._onSetReferencePhoto);
+    registerHandlers(this.bot, this.handler, this.ownerChatId, this._onSetReferencePhoto, this._onOwnerClaimed);
     this.bot.start();
   }
 

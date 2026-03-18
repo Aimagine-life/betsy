@@ -2,7 +2,7 @@ import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
 import { createServer } from "./server.js";
-import { isConfigured, loadConfig, getAgentName, getPersonality, getLLMApiKey } from "./core/config.js";
+import { isConfigured, loadConfig, saveConfig, getAgentName, getPersonality, getLLMApiKey } from "./core/config.js";
 import { TelegramChannel } from "./channels/telegram/index.js";
 import { LLMRouter } from "./core/llm/router.js";
 import { Engine } from "./core/engine.js";
@@ -131,6 +131,11 @@ async function main() {
   if (config.telegram?.token) {
     try {
       telegram = new TelegramChannel();
+      telegram.onOwnerClaimed = (chatId) => {
+        config.telegram!.owner_id = chatId;
+        saveConfig(config);
+        console.log(`🔒 Owner ID ${chatId} сохранён в конфиг`);
+      };
       telegram.onSetReferencePhoto = (photoPath) => {
         selfieTool.setReferencePhoto(photoPath);
         console.log(`📸 Референсное фото обновлено: ${photoPath.slice(0, 60)}`);

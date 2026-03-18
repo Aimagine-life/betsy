@@ -306,23 +306,37 @@ const TOOL_LABELS: Record<string, string> = {
 /** Callback to update selfie reference photo URL. */
 export type SetReferencePhotoFn = (url: string) => void;
 
+/** Callback when first user claims ownership. */
+export type OnOwnerClaimedFn = (chatId: number) => void;
+
 export function registerHandlers(
   bot: Bot,
   handler: MessageHandler,
   ownerChatId: number | null,
   onSetReferencePhoto?: SetReferencePhotoFn,
+  onOwnerClaimed?: OnOwnerClaimedFn,
 ): void {
   // --- Owner-only filter ---
-  if (ownerChatId) {
-    bot.use(async (ctx, next) => {
-      const chatId = ctx.chat?.id;
-      if (chatId && chatId !== ownerChatId) {
-        await ctx.reply("This bot is private.");
-        return;
-      }
-      await next();
-    });
-  }
+  // Mutable so the first user can claim ownership at runtime.
+  let currentOwner = ownerChatId;
+
+  bot.use(async (ctx, next) => {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return next();
+
+    // First user claims ownership when no owner is configured.
+    if (currentOwner === null) {
+      currentOwner = chatId;
+      onOwnerClaimed?.(chatId);
+      console.log(`🔒 Владелец бота установлен: ${chatId}`);
+    }
+
+    if (chatId !== currentOwner) {
+      await ctx.reply("Этот бот приватный.");
+      return;
+    }
+    await next();
+  });
 
   // -----------------------------------------------------------------------
   // Native Telegram sendMessageDraft streaming (Bot API Dec 2025)
