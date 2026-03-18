@@ -32,8 +32,10 @@ The existing `conversations` table has no data and lacks required columns. On st
      ALTER TABLE conversations ADD COLUMN user_id TEXT NOT NULL DEFAULT '';
      ALTER TABLE conversations ADD COLUMN tool_call_id TEXT;
      ALTER TABLE conversations ADD COLUMN tool_calls TEXT;
+     -- Clean up orphaned rows with no user identity:
+     DELETE FROM conversations WHERE user_id = '';
      ```
-3. This guards against data loss on deploy → rollback → redeploy cycles
+3. This guards against data loss on deploy → rollback → redeploy cycles. Rows with `user_id = ''` are deleted immediately after migration since they have no usable identity and would otherwise accumulate forever.
 
 ### Tables
 
@@ -90,19 +92,22 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 1. Load current summary from DB via `loadSummary(userId)`
 2. Load all messages from DB for this user, ordered by timestamp
 3. Split: old part (first half) and fresh part (second half, ~20 recent messages kept intact)
-4. Send to fast_model with prompt:
+4. Build the summarization prompt as an `LLMMessage[]` array and call `llm.chat()`:
 
-```
-Ты — помощник, который суммаризирует разговоры.
+```typescript
+const promptText = `Ты — помощник, который суммаризирует разговоры.
 
 Предыдущее саммари (если есть):
-{existingSummary}
+${existingSummary ?? "Нет"}
 
 Новые сообщения для включения в саммари:
-{oldMessages formatted as role: content}
+${oldMessages.map(m => `${m.role}: ${extractText(m.content)}`).join("\n")}
 
 Обнови саммари, сохранив все важные факты, решения, контекст и предпочтения пользователя.
-Пиши кратко, но не теряй важную информацию. Пиши на русском.
+Пиши кратко, но не теряй важную информацию. Пиши на русском.`;
+
+const response = await llm.chat([{ role: "user", content: promptText }]);
+const newSummary = response.text;
 ```
 
 5. **In a single SQLite transaction:**
@@ -113,6 +118,28 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 **Transaction safety:** Steps 5a and 5b are wrapped in `db.transaction(...)` to prevent partial state on crash. If the LLM call in step 4 fails, the transaction never starts and history remains intact — fallback to splice trimming.
 
 ## Changes to `src/core/engine.ts`
+
+### 0. EngineDeps update
+
+Add `contextBudget` to `EngineDeps` interface:
+```typescript
+export interface EngineDeps {
+  llm: { fast(): LLMClient; strong(): LLMClient };
+  config: PromptConfig;
+  tools: ToolRegistry;
+  contextBudget: number; // from config.memory.context_budget, default 40000
+}
+```
+
+In `src/index.ts`, wire it when constructing Engine:
+```typescript
+const engine = new Engine({
+  llm, config: promptConfig, tools,
+  contextBudget: config.memory?.context_budget ?? 40000,
+});
+```
+
+The engine accesses it as `this.deps.contextBudget` in the compaction check.
 
 ### 1. History loading (line 60-62)
 
@@ -179,7 +206,7 @@ if (!compactionAttempted && response.usage && response.usage.promptTokens > cont
 
 **System prompt rebuild:** `systemPrompt` must be rebuilt after compaction because it is constructed before the `for` loop (line 66). After compaction updates `this.summaries`, we call `buildPromptWithMemory` again to pick up the new summary. This requires changing `const systemPrompt` to `let systemPrompt` (line 66).
 
-**Note on `continue` behavior:** The assistant tool-call message that triggered compaction is already saved to DB (from step 2 persistence). After `loadHistory` reloads, that message is included in the fresh history. The `continue` re-runs the LLM with compacted context, which will produce new tool calls. This is correct — the previous tool calls were never executed (compaction fires before tool execution).
+**Note on `continue` behavior and double-save prevention:** The compaction check fires BEFORE the assistant tool-call message is saved to DB. Move the `saveMessage` for assistant tool-call messages (line 153-157) to AFTER the compaction check. This way, if compaction triggers, the unsaved assistant message is discarded, `loadHistory` returns a clean history, and the `continue` re-runs the LLM which produces a fresh response. No duplicate assistant messages in DB.
 
 **Important declarations:** Change both `const history = ...` (line 63) and `const systemPrompt = ...` (line 66) to `let` to allow reassignment after compaction.
 
@@ -242,15 +269,16 @@ On restart:
 | `src/core/memory/db.ts` | Migration + new table |
 | `src/core/memory/conversations.ts` | **New** — CRUD for messages + summaries |
 | `src/core/memory/compaction.ts` | **New** — compaction logic |
-| `src/core/engine.ts` | Load from DB, save after push, compaction instead of hard stop |
-| `src/core/config.ts` | Add `context_budget` parameter |
+| `src/core/engine.ts` | Load from DB, save after push, compaction instead of hard stop, `contextBudget` from deps |
+| `src/core/config.ts` | Add `context_budget` parameter to `memorySchema` and `normalizeConfig` |
+| `src/index.ts` | Wire `config.memory.context_budget` into `EngineDeps` |
 
 ## Edge Cases
 
 - **First message ever:** No history in DB, no summary — works like today
 - **Restart with no history:** `loadHistory` returns empty messages + null summary — same as fresh start
 - **Compaction fails (LLM error):** Catch and fall back to splice trimming as safety net. DB transaction never starts, so no partial state.
-- **Tool messages without parent assistant:** Skip orphaned tool results during `loadHistory`
+- **Tool messages without parent assistant:** `loadHistory` trims the window start forward to the first `role: "user"` message. This handles both directions: orphaned tool results without a parent assistant, and tool results at the window boundary whose parent was trimmed off by the limit. Guarantees a clean message sequence for the LLM.
 - **Images in messages:** `saveMessage` receives extracted text only; callers must extract text from `ContentPart[]` before calling. Images are ephemeral (base64 too large for DB).
 - **Crash between history.push and saveMessage:** Tolerable — at most one message lost at crash boundary. On restart, DB is the source of truth. Write-to-DB-first is not worth the complexity since crashes are rare.
 - **userId collision across channels:** Currently safe — Telegram uses numeric chat IDs, browser uses `"owner"`. Known gap: `channel` is written to DB but `loadHistory` filters only by `user_id`. TODO: if a new channel is added that could produce colliding userIds, add `channel` to `loadHistory` filter. For now, `user_id` alone is sufficient.
