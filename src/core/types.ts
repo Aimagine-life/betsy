@@ -22,5 +22,6 @@ export type EngineProgressEvent =
   | { type: 'tool_start'; tool: string; turn: number }
   | { type: 'tool_end'; tool: string; turn: number; success: boolean }
   | { type: 'turn_complete'; turn: number; totalTurns: number }
+  | { type: 'text_chunk'; chunk: string }
 
 export type ProgressCallback = (event: EngineProgressEvent) => void

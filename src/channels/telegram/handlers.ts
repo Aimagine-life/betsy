@@ -255,54 +255,109 @@ export function registerHandlers(
     });
   }
 
-  /** Handle message with typing indicator and tool progress. */
+  /** Handle message with typing, streaming text, and tool progress. */
   async function handleWithTyping(
     ctx: Context,
     text: string,
     modeOverride?: OutgoingMessage["mode"],
   ): Promise<void> {
     const stopTyping = startTyping(ctx);
+    const chatId = ctx.chat!.id;
 
-    // Progress callback — show tool execution status
+    // Streaming state
+    let streamMsgId: number | null = null;
+    let streamText = "";
+    let lastEditTime = 0;
     let statusMsgId: number | null = null;
-    const onProgress: ProgressCallback = async (event) => {
+    let editTimer: ReturnType<typeof setTimeout> | null = null;
+
+    /** Edit the streaming message with current accumulated text. */
+    const flushStreamEdit = async () => {
+      if (!streamMsgId || !streamText) return;
+      const html = markdownToTelegramHtml(streamText + " ▌");
       try {
-        if (event.type === "tool_start") {
-          const label = TOOL_LABELS[event.tool] ?? event.tool;
-          const statusText = `⏳ ${label}...`;
-          if (statusMsgId) {
-            await ctx.api.editMessageText(ctx.chat!.id, statusMsgId, statusText);
-          } else {
-            const msg = await ctx.reply(statusText);
-            statusMsgId = msg.message_id;
-          }
-        } else if (event.type === "turn_complete" && event.turn > 1) {
-          const statusText = `🔄 Думаю... (шаг ${event.turn})`;
-          if (statusMsgId) {
-            await ctx.api.editMessageText(ctx.chat!.id, statusMsgId, statusText);
-          }
-        }
+        await ctx.api.editMessageText(chatId, streamMsgId, html, { parse_mode: "HTML" });
+        lastEditTime = Date.now();
       } catch {
-        // Status message edit failed — not critical
+        // Edit may fail if text hasn't changed enough — ignore
+      }
+    };
+
+    const onProgress: ProgressCallback = (event) => {
+      if (event.type === "text_chunk") {
+        streamText += event.chunk;
+
+        // First chunk — send initial message
+        if (!streamMsgId) {
+          // Delete status message if it exists
+          if (statusMsgId) {
+            ctx.api.deleteMessage(chatId, statusMsgId).catch(() => {});
+            statusMsgId = null;
+          }
+          // Send first message (async, fire-and-forget, will be edited)
+          ctx.reply("▌").then((msg) => {
+            streamMsgId = msg.message_id;
+            flushStreamEdit();
+          }).catch(() => {});
+          return;
+        }
+
+        // Throttle edits to ~every 800ms (Telegram rate limits)
+        if (Date.now() - lastEditTime > 800) {
+          flushStreamEdit();
+        } else if (!editTimer) {
+          editTimer = setTimeout(() => {
+            editTimer = null;
+            flushStreamEdit();
+          }, 800);
+        }
+        return;
+      }
+
+      if (event.type === "tool_start") {
+        const label = TOOL_LABELS[event.tool] ?? event.tool;
+        const statusText = `⏳ ${label}...`;
+        if (statusMsgId) {
+          ctx.api.editMessageText(chatId, statusMsgId, statusText).catch(() => {});
+        } else {
+          ctx.reply(statusText).then((msg) => { statusMsgId = msg.message_id; }).catch(() => {});
+        }
+        return;
+      }
+
+      if (event.type === "turn_complete" && event.turn > 1 && statusMsgId) {
+        ctx.api.editMessageText(chatId, statusMsgId, `🔄 Думаю... (шаг ${event.turn})`).catch(() => {});
       }
     };
 
     try {
       const response = await handler(toIncoming(ctx, text), onProgress);
       stopTyping();
+      if (editTimer) clearTimeout(editTimer);
 
-      // Delete status message before delivering final response
+      // Clean up status message
       if (statusMsgId) {
-        try {
-          await ctx.api.deleteMessage(ctx.chat!.id, statusMsgId);
-        } catch { /* ignore */ }
+        ctx.api.deleteMessage(chatId, statusMsgId).catch(() => {});
       }
 
-      await deliver(ctx, modeOverride ? { ...response, mode: modeOverride } : response);
+      if (streamMsgId && !modeOverride) {
+        // Final edit — remove cursor, set final HTML
+        const html = markdownToTelegramHtml(response.text);
+        try {
+          await ctx.api.editMessageText(chatId, streamMsgId, html, { parse_mode: "HTML" });
+        } catch {
+          // If final edit fails (e.g. text too long), send as new message
+          await replyHtml(ctx, response.text);
+        }
+      } else {
+        // No streaming happened (tool-only response) or mode override
+        await deliver(ctx, modeOverride ? { ...response, mode: modeOverride } : response);
+      }
     } catch (err) {
       stopTyping();
+      if (editTimer) clearTimeout(editTimer);
       if (statusMsgId) {
-        try { await ctx.api.deleteMessage(ctx.chat!.id, statusMsgId); } catch { /* */ }
+        ctx.api.deleteMessage(chatId, statusMsgId).catch(() => {});
       }
       const msg = err instanceof Error ? err.message : String(err);
       await ctx.reply(`Ошибка: ${msg}`);

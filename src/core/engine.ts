@@ -55,7 +55,14 @@ export class Engine {
           ...history,
         ];
 
-        const response = await llm.chat(messages, tools.length ? tools : undefined);
+        // Use streaming for text responses, non-streaming for tool calls
+        const streamChunk = onProgress
+          ? (chunk: string) => onProgress({ type: "text_chunk", chunk })
+          : undefined;
+
+        const response = streamChunk
+          ? await llm.chatStream(messages, streamChunk, tools.length ? tools : undefined)
+          : await llm.chat(messages, tools.length ? tools : undefined);
 
         // If LLM didn't request tools, return the text response
         if (response.stopReason !== "tool_use" || !response.toolCalls?.length) {

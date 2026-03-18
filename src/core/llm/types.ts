@@ -43,7 +43,12 @@ export interface ToolDefinition {
   };
 }
 
+/** Callback receiving text chunks during streaming. */
+export type StreamCallback = (chunk: string) => void;
+
 /** Minimal client interface used by the router. */
 export interface LLMClient {
   chat(messages: LLMMessage[], tools?: ToolDefinition[]): Promise<LLMResponse>;
+  /** Streaming chat — calls onChunk with each text delta, returns final response. */
+  chatStream(messages: LLMMessage[], onChunk: StreamCallback, tools?: ToolDefinition[]): Promise<LLMResponse>;
 }
