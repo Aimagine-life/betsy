@@ -52,6 +52,8 @@ function markdownToTelegramHtml(text: string): string {
     } else {
       // Regular text — convert formatting
       let html = escapeHtml(segment);
+      // ### heading → <b>heading</b> (strip markdown headers)
+      html = html.replace(/^#{1,6}\s+(.+)$/gm, "<b>$1</b>");
       // **bold** → <b>bold</b>
       html = html.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
       // *italic* → <i>italic</i> (but not inside bold tags)
