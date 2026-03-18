@@ -253,7 +253,7 @@ if (response.usage && response.usage.promptTokens > contextBudget) {
 
 This ensures terminal-turn-heavy workloads don't grow from `contextBudget` to `MAX_PROMPT_TOKENS` without ever compacting. After background compaction completes, both `this.histories` and `this.summaries` are updated so the next message uses the compacted context and new summary. The default gap of 10k tokens (40k budget vs 50k hard stop) provides headroom while background compaction runs.
 
-**Race safety:** If a new message arrives while background compaction is running, `process()` uses the current in-memory history (pre-compaction, large but valid). When background compaction finishes and overwrites `this.histories`, the new message's response is already returned. The next message will use the compacted state. No data corruption — at worst one extra oversized LLM call.
+**Race safety:** If a new message arrives while background compaction is running, `process()` uses the current in-memory history (pre-compaction, large but valid). When background compaction finishes and overwrites `this.histories`, the in-flight `process()` still holds a reference to the old array and continues working with it — messages pushed during that call exist only in the old array and in DB (via `saveMessage`). The next `process()` call will use the compacted array from `this.histories`, and those in-between messages will be missing from RAM (but present in DB). This RAM/DB divergence is acceptable — on the next `hydrateUser` call (restart) or the next compaction cycle, DB is the source of truth. At worst: one extra oversized LLM call and a temporary RAM gap that self-heals.
 
 ### 4. Remove splice trimming (line 88-90)
 
@@ -261,16 +261,22 @@ Delete `history.splice(0, history.length - MAX_HISTORY)` — compaction now mana
 
 ## Changes to `src/core/config.ts`
 
-Add `context_budget` to the `memory` section of config schema (alongside existing `max_knowledge`, `study_interval_min`):
+**Schema change (required for TypeScript types):** Add `context_budget` to the `memory` zod object inside `configSchema` (lines 64-68 of config.ts):
 ```typescript
-// Inside memorySchema:
-context_budget: z.number().optional().default(40000)
+memory: z.object({
+  max_knowledge: z.number().default(200),
+  study_interval_min: z.number().default(30),
+  learning_enabled: z.boolean().default(true),
+  context_budget: z.number().default(40000), // NEW
+}).optional(),
 ```
-Update `normalizeConfig()` to pass `context_budget` through in the flat config `out.memory` block:
+This ensures `BetsyConfig["memory"]` includes `context_budget` in its TypeScript type, so `config.memory?.context_budget` type-checks without `as any`.
+
+**normalizeConfig update (for flat format configs):** Add to `out.memory` block:
 ```typescript
-// Inside normalizeConfig, flat format memory block:
 context_budget: raw.context_budget ?? 40000,
 ```
+Note: zod's `.default(40000)` would cover this at parse time even without the `normalizeConfig` change, but we include it for explicitness and consistency with the other `memory` fields.
 
 ## Changes to `src/core/memory/db.ts`
 
@@ -323,7 +329,7 @@ On restart:
 - **Images in messages:** `saveMessage` receives extracted text only; callers must extract text from `ContentPart[]` before calling. Images are ephemeral (base64 too large for DB).
 - **Crash between history.push and saveMessage:** Tolerable — at most one message lost at crash boundary. On restart, DB is the source of truth. Write-to-DB-first is not worth the complexity since crashes are rare.
 - **userId collision across channels:** Currently safe — Telegram uses numeric chat IDs, browser uses `"owner"`. Known gap: `channel` is written to DB but `loadHistory` filters only by `user_id`. TODO: if a new channel is added that could produce colliding userIds, add `channel` to `loadHistory` filter. For now, `user_id` alone is sufficient.
-- **Scheduler `getHistory()` after restart:** `getHistory()` reads from in-memory `this.histories` which is only hydrated on first `process()` call. After restart, if the scheduler calls `getHistory()` before the user sends a message, it returns `[]`. Fix: `getHistory()` should call `loadHistory()` from DB if the in-memory map is empty for the given userId.
+- **Scheduler `getHistory()` after restart:** Fixed — `getHistory()` now calls `hydrateUser()` which loads from DB if the in-memory map is empty (see Section 1, "Update `getHistory()`").
 - **Summarization language:** The compaction prompt is hardcoded in Russian ("Пиши на русском"). This matches the project's UI language (per CLAUDE.md). If Betsy is ever used for non-Russian conversations, this should be made configurable. Accepted assumption for now.
 - **Streaming draft on compaction `continue`:** When compaction fires during a tool-use turn with streaming enabled, the Telegram handler's `streamText` may already contain partial text from the pre-compaction LLM call. After `continue`, the next LLM call appends more text via the same `streamChunk` callback. This is acceptable — tool-use turns typically have minimal/empty `response.text`, so the visual impact is negligible. If it becomes a problem, the engine could reset the streaming state before `continue`, but this is out of scope.
 - **`extractText` utility:** Used in `compaction.ts` to convert `LLMMessage.content` (string or ContentPart[]) to a plain string. Defined as a local helper in `compaction.ts` — not shared, since it's only needed there.
