@@ -255,7 +255,28 @@ export function registerHandlers(
     });
   }
 
-  /** Handle message with typing, streaming text, and tool progress. */
+  // -----------------------------------------------------------------------
+  // Native Telegram sendMessageDraft streaming (Bot API Dec 2025)
+  // -----------------------------------------------------------------------
+
+  /** Unique draft ID counter — each streaming response gets its own. */
+  let nextDraftId = 0;
+
+  /** Call the native sendMessageDraft Bot API method. */
+  async function sendDraft(apiObj: Bot["api"], chatId: number, draftId: number, text: string): Promise<void> {
+    const raw = apiObj as Bot["api"] & {
+      sendMessageDraft?: (chatId: number, draftId: number, text: string, params?: { parse_mode?: string }) => Promise<unknown>;
+    };
+    if (typeof raw.sendMessageDraft === "function") {
+      await raw.sendMessageDraft(chatId, draftId, text);
+      return;
+    }
+    // Fallback: call raw API via grammy's raw method
+    await (apiObj as unknown as { raw: { sendMessageDraft: (body: Record<string, unknown>) => Promise<unknown> } })
+      .raw.sendMessageDraft({ chat_id: chatId, draft_id: draftId, text });
+  }
+
+  /** Handle message with native draft streaming and tool progress. */
   async function handleWithTyping(
     ctx: Context,
     text: string,
@@ -265,21 +286,22 @@ export function registerHandlers(
     const chatId = ctx.chat!.id;
 
     // Streaming state
-    let streamMsgId: number | null = null;
     let streamText = "";
-    let lastEditTime = 0;
+    let draftId = 0;
+    let lastDraftTime = 0;
+    let draftTimer: ReturnType<typeof setTimeout> | null = null;
+    let draftSupported = true;
     let statusMsgId: number | null = null;
-    let editTimer: ReturnType<typeof setTimeout> | null = null;
 
-    /** Edit the streaming message with current accumulated text. */
-    const flushStreamEdit = async () => {
-      if (!streamMsgId || !streamText) return;
-      const html = markdownToTelegramHtml(streamText + " ▌");
+    /** Flush current accumulated text to draft. */
+    const flushDraft = async () => {
+      if (!streamText || !draftId || !draftSupported) return;
       try {
-        await ctx.api.editMessageText(chatId, streamMsgId, html, { parse_mode: "HTML" });
-        lastEditTime = Date.now();
+        await sendDraft(ctx.api, chatId, draftId, streamText + " ▌");
+        lastDraftTime = Date.now();
       } catch {
-        // Edit may fail if text hasn't changed enough — ignore
+        // sendMessageDraft not supported — stop trying
+        draftSupported = false;
       }
     };
 
@@ -287,29 +309,26 @@ export function registerHandlers(
       if (event.type === "text_chunk") {
         streamText += event.chunk;
 
-        // First chunk — send initial message
-        if (!streamMsgId) {
-          // Delete status message if it exists
+        // Allocate draft ID on first chunk
+        if (!draftId) {
+          nextDraftId = nextDraftId >= 2_147_483_647 ? 1 : nextDraftId + 1;
+          draftId = nextDraftId;
+
+          // Delete status message if exists
           if (statusMsgId) {
             ctx.api.deleteMessage(chatId, statusMsgId).catch(() => {});
             statusMsgId = null;
           }
-          // Send first message (async, fire-and-forget, will be edited)
-          ctx.reply("▌").then((msg) => {
-            streamMsgId = msg.message_id;
-            flushStreamEdit();
-          }).catch(() => {});
-          return;
         }
 
-        // Throttle edits to ~every 800ms (Telegram rate limits)
-        if (Date.now() - lastEditTime > 800) {
-          flushStreamEdit();
-        } else if (!editTimer) {
-          editTimer = setTimeout(() => {
-            editTimer = null;
-            flushStreamEdit();
-          }, 800);
+        // Throttle drafts to ~every 500ms
+        if (Date.now() - lastDraftTime > 500) {
+          flushDraft();
+        } else if (!draftTimer) {
+          draftTimer = setTimeout(() => {
+            draftTimer = null;
+            flushDraft();
+          }, 500);
         }
         return;
       }
@@ -333,29 +352,27 @@ export function registerHandlers(
     try {
       const response = await handler(toIncoming(ctx, text), onProgress);
       stopTyping();
-      if (editTimer) clearTimeout(editTimer);
+      if (draftTimer) clearTimeout(draftTimer);
 
       // Clean up status message
       if (statusMsgId) {
         ctx.api.deleteMessage(chatId, statusMsgId).catch(() => {});
       }
 
-      if (streamMsgId && !modeOverride) {
-        // Final edit — remove cursor, set final HTML
-        const html = markdownToTelegramHtml(response.text);
+      // Clear the draft (send empty to dismiss) then send final message
+      if (draftId && draftSupported) {
         try {
-          await ctx.api.editMessageText(chatId, streamMsgId, html, { parse_mode: "HTML" });
-        } catch {
-          // If final edit fails (e.g. text too long), send as new message
-          await replyHtml(ctx, response.text);
-        }
-      } else {
-        // No streaming happened (tool-only response) or mode override
-        await deliver(ctx, modeOverride ? { ...response, mode: modeOverride } : response);
+          await sendDraft(ctx.api, chatId, draftId, response.text);
+          // Small delay so user sees the complete draft before the final message
+          await sleep(300);
+        } catch { /* ignore */ }
       }
+
+      // Send the final message
+      await deliver(ctx, modeOverride ? { ...response, mode: modeOverride } : response);
     } catch (err) {
       stopTyping();
-      if (editTimer) clearTimeout(editTimer);
+      if (draftTimer) clearTimeout(draftTimer);
       if (statusMsgId) {
         ctx.api.deleteMessage(chatId, statusMsgId).catch(() => {});
       }
