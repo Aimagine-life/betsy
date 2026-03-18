@@ -20,7 +20,7 @@ const testConfig = {
 
 describe("Engine", () => {
   it("processes message and returns response", async () => {
-    const engine = new Engine({ llm: mockLLM("Привет!"), config: testConfig, tools: new ToolRegistry() });
+    const engine = new Engine({ llm: mockLLM("Привет!"), config: testConfig, tools: new ToolRegistry(), contextBudget: 40000 });
     const res = await engine.process({
       channelName: "test",
       userId: "1",
@@ -37,7 +37,7 @@ describe("Engine", () => {
       }),
       strong: () => ({ chat: vi.fn() }),
     };
-    const engine = new Engine({ llm, config: testConfig, tools: new ToolRegistry() });
+    const engine = new Engine({ llm, config: testConfig, tools: new ToolRegistry(), contextBudget: 40000 });
     const res = await engine.process({
       channelName: "test",
       userId: "1",
@@ -75,7 +75,7 @@ describe("Engine", () => {
       strong: () => ({ chat: chatMock }),
     };
 
-    const engine = new Engine({ llm, config: testConfig, tools });
+    const engine = new Engine({ llm, config: testConfig, tools, contextBudget: 40000 });
     const res = await engine.process({
       channelName: "test",
       userId: "1",

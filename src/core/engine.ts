@@ -4,6 +4,8 @@ import type { ToolRegistry } from "./tools/registry.js";
 import type { ToolResult } from "./tools/types.js";
 import { buildSystemPrompt, type PromptConfig } from "./prompt.js";
 import { searchKnowledge } from "./memory/knowledge.js";
+import { saveMessage, loadHistory, extractText } from "./memory/conversations.js";
+import { compactHistory } from "./memory/compaction.js";
 
 function historyChars(history: LLMMessage[]): number {
   let total = 0;
@@ -28,18 +30,29 @@ export interface EngineDeps {
   llm: { fast(): LLMClient; strong(): LLMClient };
   config: PromptConfig;
   tools: ToolRegistry;
+  contextBudget: number;
 }
 
 export class Engine {
   private deps: EngineDeps;
   private histories: Map<string, LLMMessage[]> = new Map();
+  private summaries: Map<string, string> = new Map();
+  private compactionInFlight: Set<string> = new Set();
 
   constructor(deps: EngineDeps) {
     this.deps = deps;
   }
 
+  private hydrateUser(userId: string): void {
+    if (this.histories.has(userId)) return;
+    const { messages, summary } = loadHistory(userId);
+    this.histories.set(userId, messages);
+    if (summary) this.summaries.set(userId, summary);
+  }
+
   /** Get conversation history for a user (for scheduler context). */
   getHistory(userId: string): Array<{ role: string; content: string }> {
+    this.hydrateUser(userId);
     const history = this.histories.get(userId);
     if (!history) return [];
     return history
@@ -58,12 +71,12 @@ export class Engine {
 
     // Get or create history for this user
     if (!this.histories.has(userId)) {
-      this.histories.set(userId, []);
+      this.hydrateUser(userId);
     }
-    const history = this.histories.get(userId)!;
+    let history = this.histories.get(userId)!;
 
     // Build system prompt with memory context
-    const systemPrompt = this.buildPromptWithMemory(msg.text, userId);
+    let systemPrompt = this.buildPromptWithMemory(msg.text, userId);
 
     // Add user message (with reply context and/or images if present)
     const replyTo = msg.metadata?.replyToText as string | undefined;
@@ -84,10 +97,7 @@ export class Engine {
       history.push({ role: "user", content: textContent });
     }
 
-    // Trim history to avoid context overflow
-    if (history.length > MAX_HISTORY) {
-      history.splice(0, history.length - MAX_HISTORY);
-    }
+    saveMessage(userId, msg.channelName, "user", textContent);
 
     // Build tool definitions for the LLM
     const tools = this.buildToolDefinitions();
@@ -95,6 +105,7 @@ export class Engine {
     try {
       let lastMediaUrl: string | undefined;
       const toolCallCounts = new Map<string, number>();
+      let compactionAttempted = false;
 
       // Agentic loop: LLM → tool calls → execute → repeat
       for (let turn = 0; turn < MAX_TURNS; turn++) {
@@ -134,6 +145,7 @@ export class Engine {
         if (response.usage && response.usage.promptTokens > MAX_PROMPT_TOKENS) {
           const text = response.text || "Достигнут лимит контекста. Вот что удалось найти.";
           history.push({ role: "assistant", content: text });
+          saveMessage(userId, msg.channelName, "assistant", text);
           console.log(JSON.stringify({
             tag: "engine:limit",
             reason: "token_budget",
@@ -146,15 +158,48 @@ export class Engine {
         if (response.stopReason !== "tool_use" || !response.toolCalls?.length) {
           const text = response.text || "...";
           history.push({ role: "assistant", content: text });
+          saveMessage(userId, msg.channelName, "assistant", text);
+
+          // Background compaction for terminal turns
+          if (!this.compactionInFlight.has(userId) && response.usage && response.usage.promptTokens > this.deps.contextBudget) {
+            this.compactionInFlight.add(userId);
+            compactHistory(userId, this.deps.llm.fast())
+              .then(() => {
+                const { messages: m, summary: s } = loadHistory(userId);
+                this.histories.set(userId, m);
+                if (s) this.summaries.set(userId, s);
+              })
+              .catch(err => console.error("Background compaction failed:", err))
+              .finally(() => this.compactionInFlight.delete(userId));
+          }
+
           return { text, mediaUrl: lastMediaUrl };
         }
 
-        // Add assistant message with tool calls to history
+        // Compaction check for tool-use turns — BEFORE saving assistant tool-call
+        if (!compactionAttempted && response.usage && response.usage.promptTokens > this.deps.contextBudget) {
+          compactionAttempted = true;
+          turn--;
+          try {
+            await compactHistory(userId, this.deps.llm.fast());
+          } catch (err) {
+            console.error("Compaction failed:", err);
+          }
+          const { messages: m, summary: s } = loadHistory(userId);
+          this.histories.set(userId, m);
+          history = m;
+          if (s) this.summaries.set(userId, s);
+          systemPrompt = this.buildPromptWithMemory(msg.text, userId);
+          continue;
+        }
+
+        // Add assistant message with tool calls to history (MOVED from before compaction check)
         history.push({
           role: "assistant",
           content: response.text || "",
           toolCalls: response.toolCalls,
         });
+        saveMessage(userId, msg.channelName, "assistant", response.text || "", undefined, response.toolCalls);
 
         // Execute each tool and add results to history
         for (const tc of response.toolCalls) {
@@ -187,6 +232,7 @@ export class Engine {
             content: resultText,
             toolCallId: tc.id,
           });
+          saveMessage(userId, msg.channelName, "tool", resultText, tc.id);
 
           onProgress?.({ type: "tool_end", tool: tc.name, turn: turn + 1, success: result.success });
         }
@@ -201,6 +247,7 @@ export class Engine {
         if (overused) {
           const text = `Инструмент "${overused[0]}" использован ${overused[1]} раз. Попробую ответить тем, что есть.`;
           history.push({ role: "assistant", content: text });
+          saveMessage(userId, msg.channelName, "assistant", text);
           console.log(JSON.stringify({
             tag: "engine:limit",
             reason: "tool_limit",
@@ -216,6 +263,7 @@ export class Engine {
       // Max turns exceeded
       const text = "Достигнут лимит итераций. Попробуй переформулировать задачу.";
       history.push({ role: "assistant", content: text });
+      saveMessage(userId, msg.channelName, "assistant", text);
       return { text };
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -239,6 +287,11 @@ export class Engine {
       }
     } catch {
       // Memory not initialized yet — skip
+    }
+
+    const summary = this.summaries.get(chatId);
+    if (summary) {
+      prompt += `\n\n## Краткое содержание предыдущего разговора\n\n${summary}`;
     }
 
     return prompt;

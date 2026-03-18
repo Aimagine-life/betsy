@@ -35,7 +35,7 @@ describe("Engine mediaUrl propagation", () => {
       strong: () => ({ chat: chatMock }),
     };
 
-    const engine = new Engine({ llm: llm as any, config: testConfig, tools });
+    const engine = new Engine({ llm: llm as any, config: testConfig, tools, contextBudget: 40000 });
     const res = await engine.process({
       channelName: "test",
       userId: "1",
@@ -74,7 +74,7 @@ describe("Engine mediaUrl propagation", () => {
       strong: () => ({ chat: chatMock }),
     };
 
-    const engine = new Engine({ llm: llm as any, config: testConfig, tools });
+    const engine = new Engine({ llm: llm as any, config: testConfig, tools, contextBudget: 40000 });
     const res = await engine.process({
       channelName: "test",
       userId: "1",
