@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 **`loadHistory(userId, limit = 40): { messages: LLMMessage[], summary: string | null }`**
 - SELECT last N messages from `conversations` ordered by timestamp
 - Reconstruct `LLMMessage[]` format (parse `toolCalls` from JSON with try/catch per row — skip rows with corrupt JSON, restore `toolCallId`)
-- Also loads summary via `loadSummary(userId)` and returns it separately
+- Also loads summary via `loadSummary(userId)` and extracts the string: `return { messages, summary: summaryRecord?.summary ?? null }`
 - For user messages with `ContentPart[]` (images): only text part is stored, images are ephemeral
 - Returns messages + summary separately — summary is injected into system prompt by the engine, NOT as a message in history
 
@@ -306,8 +306,8 @@ Note: zod's `.default(40000)` would cover this at parse time even without the `n
      const count = db.prepare("SELECT COUNT(*) as cnt FROM conversations").get() as { cnt: number };
      if (count.cnt === 0) {
        db.exec("DROP TABLE IF EXISTS conversations");
-       // Recreate with new schema — intentionally no IF NOT EXISTS since DROP above guarantees table is gone
-       db.exec(`CREATE TABLE conversations (...new schema...)`);
+       // Use IF NOT EXISTS to guard against concurrent double-startup race
+       db.exec(`CREATE TABLE IF NOT EXISTS conversations (...new schema...)`);
      } else {
        // Use db.transaction() for atomic migration
        // IMPORTANT: use db.prepare().run() inside transaction, NOT db.exec()
@@ -353,14 +353,16 @@ On restart:
 
 ## Files Changed
 
-| File | Change |
-|---|---|
-| `src/core/memory/db.ts` | Migration + new table |
-| `src/core/memory/conversations.ts` | **New** — CRUD for messages + summaries |
-| `src/core/memory/compaction.ts` | **New** — compaction logic |
-| `src/core/engine.ts` | Load from DB, save after push, compaction instead of hard stop, `contextBudget` from deps |
-| `src/core/config.ts` | Add `context_budget` parameter to `memorySchema` and `normalizeConfig` |
-| `src/index.ts` | Wire `config.memory.context_budget` into `EngineDeps` |
+**Implementation order** (types must exist before consumers):
+
+| Order | File | Change |
+|---|---|---|
+| 1 | `src/core/config.ts` | Add `context_budget` to `memorySchema` (types first) and `normalizeConfig` (optional but recommended for consistency) |
+| 2 | `src/core/memory/db.ts` | Migration + new table |
+| 3 | `src/core/memory/conversations.ts` | **New** — CRUD for messages + summaries, `extractText` export |
+| 4 | `src/core/memory/compaction.ts` | **New** — compaction logic |
+| 5 | `src/core/engine.ts` | `EngineDeps` update, load from DB, save after push, compaction |
+| 6 | `src/index.ts` | Wire `config.memory.context_budget` into `EngineDeps` |
 
 ## Edge Cases
 
