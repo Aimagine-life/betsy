@@ -15,3 +15,12 @@ export interface LLMMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
 }
+
+/** Progress events emitted by the Engine during agentic loop. */
+export type EngineProgressEvent =
+  | { type: 'thinking' }
+  | { type: 'tool_start'; tool: string; turn: number }
+  | { type: 'tool_end'; tool: string; turn: number; success: boolean }
+  | { type: 'turn_complete'; turn: number; totalTurns: number }
+
+export type ProgressCallback = (event: EngineProgressEvent) => void

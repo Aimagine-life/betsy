@@ -1,4 +1,4 @@
-import type { IncomingMessage, OutgoingMessage } from "./types.js";
+import type { IncomingMessage, OutgoingMessage, ProgressCallback } from "./types.js";
 import type { LLMClient, LLMMessage, ToolDefinition } from "./llm/types.js";
 import type { ToolRegistry } from "./tools/registry.js";
 import { buildSystemPrompt, type PromptConfig } from "./prompt.js";
@@ -21,7 +21,7 @@ export class Engine {
     this.deps = deps;
   }
 
-  async process(msg: IncomingMessage): Promise<OutgoingMessage> {
+  async process(msg: IncomingMessage, onProgress?: ProgressCallback): Promise<OutgoingMessage> {
     const llm = this.deps.llm.fast();
     const userId = msg.userId;
 
@@ -48,6 +48,8 @@ export class Engine {
     try {
       // Agentic loop: LLM → tool calls → execute → repeat
       for (let turn = 0; turn < MAX_TURNS; turn++) {
+        onProgress?.({ type: "thinking" });
+
         const messages: LLMMessage[] = [
           { role: "system", content: systemPrompt },
           ...history,
@@ -71,14 +73,21 @@ export class Engine {
 
         // Execute each tool and add results to history
         for (const tc of response.toolCalls) {
+          onProgress?.({ type: "tool_start", tool: tc.name, turn: turn + 1 });
+
           const result = await this.executeTool(tc.name, tc.arguments);
+          const success = !result.startsWith("Error:");
+
           history.push({
             role: "tool",
             content: result,
             toolCallId: tc.id,
           });
+
+          onProgress?.({ type: "tool_end", tool: tc.name, turn: turn + 1, success });
         }
 
+        onProgress?.({ type: "turn_complete", turn: turn + 1, totalTurns: MAX_TURNS });
         console.log(`🔧 Turn ${turn + 1}: executed ${response.toolCalls.map(t => t.name).join(", ")}`);
       }
 

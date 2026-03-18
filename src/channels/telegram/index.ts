@@ -1,7 +1,7 @@
 import { Bot } from "grammy";
 import { autoRetry } from "@grammyjs/auto-retry";
-import type { Channel } from "../types.js";
-import type { IncomingMessage, OutgoingMessage } from "../../core/types.js";
+import type { Channel, MessageHandler } from "../types.js";
+import type { OutgoingMessage } from "../../core/types.js";
 import { registerHandlers } from "./handlers.js";
 
 /**
@@ -15,7 +15,7 @@ export class TelegramChannel implements Channel {
   requiredConfig = ["token"];
 
   private bot: Bot | null = null;
-  private handler: ((msg: IncomingMessage) => Promise<OutgoingMessage>) | null = null;
+  private handler: MessageHandler | null = null;
   private ownerChatId: number | null = null;
 
   async start(config: Record<string, string>): Promise<void> {
@@ -39,7 +39,7 @@ export class TelegramChannel implements Channel {
     await this.bot?.api.sendMessage(parseInt(userId, 10), message.text);
   }
 
-  onMessage(handler: (msg: IncomingMessage) => Promise<OutgoingMessage>): void {
+  onMessage(handler: MessageHandler): void {
     this.handler = handler;
   }
 }

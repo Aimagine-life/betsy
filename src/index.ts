@@ -101,9 +101,9 @@ async function main() {
   if (config.telegram?.token) {
     try {
       const telegram = new TelegramChannel();
-      telegram.onMessage(async (msg) => {
+      telegram.onMessage(async (msg, onProgress) => {
         if (engine) {
-          return engine.process(msg);
+          return engine.process(msg, onProgress);
         }
         return { text: "LLM не настроен. Открой дашборд для настройки." };
       });
