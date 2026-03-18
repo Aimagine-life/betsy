@@ -21,6 +21,8 @@ function historyChars(history: LLMMessage[]): number {
 
 const MAX_TURNS = 20;
 const MAX_HISTORY = 40;
+export const MAX_PROMPT_TOKENS = 50_000;
+export const MAX_SAME_TOOL = 5;
 
 export interface EngineDeps {
   llm: { fast(): LLMClient; strong(): LLMClient };
@@ -92,6 +94,7 @@ export class Engine {
 
     try {
       let lastMediaUrl: string | undefined;
+      const toolCallCounts = new Map<string, number>();
 
       // Agentic loop: LLM → tool calls → execute → repeat
       for (let turn = 0; turn < MAX_TURNS; turn++) {
@@ -126,6 +129,18 @@ export class Engine {
           stopReason: response.stopReason,
           toolCalls: response.toolCalls?.map(t => t.name),
         }));
+
+        // Check 1: Token budget — if context is too large, stop the loop
+        if (response.usage && response.usage.promptTokens > MAX_PROMPT_TOKENS) {
+          const text = response.text || "Достигнут лимит контекста. Вот что удалось найти.";
+          history.push({ role: "assistant", content: text });
+          console.log(JSON.stringify({
+            tag: "engine:limit",
+            reason: "token_budget",
+            promptTokens: response.usage.promptTokens,
+          }));
+          return { text, mediaUrl: lastMediaUrl };
+        }
 
         // If LLM didn't request tools, return the text response
         if (response.stopReason !== "tool_use" || !response.toolCalls?.length) {
@@ -174,6 +189,25 @@ export class Engine {
           });
 
           onProgress?.({ type: "tool_end", tool: tc.name, turn: turn + 1, success: result.success });
+        }
+
+        // Increment tool counts for this cycle
+        for (const tc of response.toolCalls) {
+          toolCallCounts.set(tc.name, (toolCallCounts.get(tc.name) ?? 0) + 1);
+        }
+
+        // Check 2: Per-tool limit (scoped to current process() call only)
+        const overused = [...toolCallCounts.entries()].find(([, count]) => count > MAX_SAME_TOOL);
+        if (overused) {
+          const text = `Инструмент "${overused[0]}" использован ${overused[1]} раз. Попробую ответить тем, что есть.`;
+          history.push({ role: "assistant", content: text });
+          console.log(JSON.stringify({
+            tag: "engine:limit",
+            reason: "tool_limit",
+            tool: overused[0],
+            count: overused[1],
+          }));
+          return { text, mediaUrl: lastMediaUrl };
         }
 
         onProgress?.({ type: "turn_complete", turn: turn + 1, totalTurns: MAX_TURNS });
