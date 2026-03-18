@@ -107,6 +107,7 @@ ${oldMessages.map(m => `${m.role}: ${extractText(m.content)}`).join("\n")}
 Обнови саммари, сохранив все важные факты, решения, контекст и предпочтения пользователя.
 Пиши кратко, но не теряй важную информацию. Пиши на русском.`;
 
+// Always use chat(), not chatStream() — compaction is internal, no user-facing streaming
 const response = await llm.chat([{ role: "user", content: promptText }]);
 const newSummary = response.text?.trim();
 
@@ -198,6 +199,7 @@ This is analogous to how knowledge context is already appended. No second `syste
 
 After every `history.push(...)`, call `saveMessage()`:
 - Line 82-84: user message
+- Line 136: assistant response on hard-stop (MAX_PROMPT_TOKENS exceeded)
 - Line 148: assistant final response
 - Line 153-157: assistant with tool_calls
 - Line 185-189: tool result
@@ -264,7 +266,7 @@ if (response.usage && response.usage.promptTokens > contextBudget) {
 
 This ensures terminal-turn-heavy workloads don't grow from `contextBudget` to `MAX_PROMPT_TOKENS` without ever compacting. After background compaction completes, both `this.histories` and `this.summaries` are updated so the next message uses the compacted context and new summary. The default gap of 10k tokens (40k budget vs 50k hard stop) provides headroom while background compaction runs.
 
-**Race safety:** If a new message arrives while background compaction is running, `process()` uses the current in-memory history (pre-compaction, large but valid). When background compaction finishes and overwrites `this.histories`, the in-flight `process()` still holds a reference to the old array and continues working with it — messages pushed during that call exist only in the old array and in DB (via `saveMessage`). The next `process()` call will use the compacted array from `this.histories`, and those in-between messages will be missing from RAM (but present in DB). This RAM/DB divergence is acceptable — on the next `hydrateUser` call (restart) or the next compaction cycle, DB is the source of truth. At worst: one extra oversized LLM call and a temporary RAM gap that self-heals.
+**Race safety:** If a new message arrives while background compaction is running, `process()` uses the current in-memory history (pre-compaction, large but valid). When background compaction finishes and overwrites `this.histories`, the in-flight `process()` still holds a reference to the old array and continues working with it — messages pushed during that call exist only in the old array and in DB (via `saveMessage`). The next `process()` call will use the compacted array from `this.histories`, and those in-between messages will be missing from RAM (but present in DB). This RAM/DB divergence heals **only on process restart** (when `hydrateUser` reloads from DB for a fresh in-memory map) — NOT automatically during runtime, because `hydrateUser` is guarded by `has()` and won't re-hydrate an already-present key. This is acceptable for a single-user chatbot where restarts are frequent (deploys). At worst: one extra oversized LLM call and some messages visible only in DB until restart.
 
 ### 4. Remove splice trimming (line 88-90)
 
@@ -293,27 +295,34 @@ Note: zod's `.default(40000)` would cover this at parse time even without the `n
 
 **Restructure `getDB()`:** The existing `db.exec(multiStatementSQL)` runs all DDL at once. Migration requires imperative logic (PRAGMA check → conditional branch) that cannot go inside `db.exec`. The approach:
 
-1. Keep the existing `db.exec` block as-is (with old `CREATE TABLE IF NOT EXISTS conversations` — it handles fresh installs)
-2. **After** `db.exec`, add an imperative migration block:
+1. **Update** the existing `db.exec` block: replace the old `CREATE TABLE IF NOT EXISTS conversations` with the **new schema** (including `user_id`, `tool_call_id`, `tool_calls`). This makes fresh installs create the correct schema directly — no wasted DROP+recreate.
+2. **After** `db.exec`, add an imperative migration block for existing installs:
    ```typescript
-   // Migration: upgrade conversations table if needed
+   // Migration: upgrade conversations table if needed (existing installs only)
    const cols = db.pragma("table_info(conversations)") as Array<{ name: string }>;
    const hasUserId = cols.some(c => c.name === "user_id");
    if (!hasUserId) {
      const count = db.prepare("SELECT COUNT(*) as cnt FROM conversations").get() as { cnt: number };
      if (count.cnt === 0) {
        db.exec("DROP TABLE IF EXISTS conversations");
+       // Recreate with new schema (same as in db.exec block above)
        db.exec(`CREATE TABLE conversations (...new schema...)`);
      } else {
-       db.exec(`BEGIN; ALTER TABLE ...; ALTER TABLE ...; ALTER TABLE ...; DELETE ...; COMMIT;`);
+       // Use db.transaction() for atomic migration (not raw BEGIN/COMMIT string)
+       db.transaction(() => {
+         db.exec("ALTER TABLE conversations ADD COLUMN user_id TEXT NOT NULL DEFAULT ''");
+         db.exec("ALTER TABLE conversations ADD COLUMN tool_call_id TEXT");
+         db.exec("ALTER TABLE conversations ADD COLUMN tool_calls TEXT");
+         db.exec("DELETE FROM conversations WHERE user_id = ''");
+       })();
      }
    }
-   // Always create summaries table (idempotent)
+   // Always create summaries table and index (idempotent)
    db.exec(`CREATE TABLE IF NOT EXISTS conversation_summaries (...)`);
    db.exec(`CREATE INDEX IF NOT EXISTS idx_conv_user ON conversations(user_id, timestamp)`);
    ```
-3. On fresh install: `db.exec` creates old-schema table → migration sees no `user_id` + count=0 → DROP + recreate with new schema. Works correctly.
-4. On existing install: `db.exec` finds table already exists (IF NOT EXISTS) → migration checks and upgrades. Works correctly.
+3. On fresh install: `db.exec` creates new-schema table directly → migration sees `user_id` present → skips. Clean path.
+4. On existing install: `db.exec` finds table exists (IF NOT EXISTS skips) → migration detects missing `user_id` → upgrades atomically via `db.transaction()`.
 
 ## Data Flow
 
