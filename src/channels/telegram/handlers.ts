@@ -3,7 +3,6 @@ import type { IncomingMessage, OutgoingMessage, ProgressCallback } from "../../c
 import type { MessageHandler } from "../types.js";
 import { sendVoiceResponse } from "./voice.js";
 import { sendVideoNote } from "./video.js";
-import { sendSelfie } from "./selfies.js";
 
 /** Max Telegram message length. */
 const MAX_MSG_LEN = 4096;
@@ -175,6 +174,23 @@ function chunkText(text: string, maxLen: number): string[] {
 async function deliver(ctx: Context, response: OutgoingMessage): Promise<void> {
   const mode = response.mode ?? "text";
 
+  // If response has a media URL (e.g. from selfie tool), send as photo
+  if (response.mediaUrl) {
+    try {
+      const imgRes = await fetch(response.mediaUrl);
+      const buffer = Buffer.from(await imgRes.arrayBuffer());
+      const { InputFile } = await import("grammy");
+      const caption = response.text ? markdownToTelegramHtml(response.text) : undefined;
+      await ctx.replyWithPhoto(new InputFile(buffer, "selfie.jpg"), {
+        caption,
+        parse_mode: caption ? "HTML" : undefined,
+      });
+      return;
+    } catch {
+      // Fall through to text delivery
+    }
+  }
+
   if (mode === "voice") {
     const sent = await sendVoiceResponse(ctx as never, response.text, {});
     if (!sent) await replyHtml(ctx, response.text);
@@ -183,12 +199,6 @@ async function deliver(ctx: Context, response: OutgoingMessage): Promise<void> {
 
   if (mode === "video") {
     const sent = await sendVideoNote(ctx as never, response.text, {}, "", "");
-    if (!sent) await replyHtml(ctx, response.text);
-    return;
-  }
-
-  if (mode === "selfie") {
-    const sent = await sendSelfie(ctx as never, response.text, "", "");
     if (!sent) await replyHtml(ctx, response.text);
     return;
   }
@@ -232,6 +242,7 @@ const TOOL_LABELS: Record<string, string> = {
   self_config: "меняю настройки",
   scheduler: "настраиваю расписание",
   ssh: "подключаюсь по SSH",
+  selfie: "генерирую селфи",
 };
 
 // ---------------------------------------------------------------------------
@@ -406,7 +417,7 @@ export function registerHandlers(
   bot.command("selfie", async (ctx) => {
     const body = commandBody(ctx, "selfie");
     if (!body) { await ctx.reply("Usage: /selfie <description>"); return; }
-    await handleWithTyping(ctx, body, "selfie");
+    await handleWithTyping(ctx, `Сделай селфи: ${body}`);
   });
 
   // /study
