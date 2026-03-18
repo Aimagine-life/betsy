@@ -20,6 +20,9 @@ llm:
   api_key: YOUR_OPENROUTER_API_KEY
   fast_model: google/gemini-2.5-flash
   strong_model: anthropic/claude-sonnet-4
+  # fallback_models:                           # Free models for when balance runs out
+  #   - google/gemini-2.5-flash:free
+  #   - deepseek/deepseek-v3.2-20251201:free
 
 channels:
   browser:
