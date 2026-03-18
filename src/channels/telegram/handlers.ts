@@ -504,6 +504,8 @@ export function registerHandlers(
 
   // /study
   bot.command("study", (ctx) => handleWithTyping(ctx, "/study"));
+  // /settings
+  bot.command("settings", (ctx) => handleWithTyping(ctx, "/settings"));
 
   // Photos: /setphoto saves reference, everything else is sent to the LLM
   bot.on("message:photo", async (ctx) => {
@@ -533,10 +535,9 @@ export function registerHandlers(
     await handleWithTyping(ctx, caption || "Что на этом фото?");
   });
 
-  // Plain text messages
+  // Plain text messages (including unregistered /commands — let LLM handle them)
   bot.on("message:text", async (ctx) => {
     const userText = ctx.message.text;
-    if (userText.startsWith("/")) return;
     await handleWithTyping(ctx, userText);
   });
 }
