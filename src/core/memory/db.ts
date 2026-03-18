@@ -38,9 +38,12 @@ export function getDB(dbPath?: string): Database.Database {
   db.exec(`
     CREATE TABLE IF NOT EXISTS conversations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
       channel TEXT NOT NULL,
       role TEXT NOT NULL,
       content TEXT NOT NULL,
+      tool_call_id TEXT,
+      tool_calls TEXT,
       timestamp INTEGER NOT NULL DEFAULT (unixepoch())
     );
 
@@ -89,6 +92,42 @@ export function getDB(dbPath?: string): Database.Database {
         VALUES (new.id, new.topic, new.insight);
     END;
   `);
+
+  // Migration: upgrade old conversations table if needed
+  const cols = db.pragma("table_info(conversations)") as Array<{ name: string }>;
+  const hasUserId = cols.some((c: { name: string }) => c.name === "user_id");
+  if (!hasUserId) {
+    const count = (db.prepare("SELECT COUNT(*) as cnt FROM conversations").get() as { cnt: number }).cnt;
+    if (count === 0) {
+      db.exec("DROP TABLE IF EXISTS conversations");
+      db.exec(`CREATE TABLE IF NOT EXISTS conversations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        channel TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        tool_call_id TEXT,
+        tool_calls TEXT,
+        timestamp INTEGER NOT NULL DEFAULT (unixepoch())
+      )`);
+    } else {
+      db.transaction(() => {
+        db.prepare("ALTER TABLE conversations ADD COLUMN user_id TEXT NOT NULL DEFAULT ''").run();
+        db.prepare("ALTER TABLE conversations ADD COLUMN tool_call_id TEXT").run();
+        db.prepare("ALTER TABLE conversations ADD COLUMN tool_calls TEXT").run();
+        db.prepare("DELETE FROM conversations WHERE user_id = ''").run();
+      })();
+    }
+  }
+
+  db.exec(`CREATE TABLE IF NOT EXISTS conversation_summaries (
+    user_id TEXT PRIMARY KEY,
+    summary TEXT NOT NULL,
+    token_estimate INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  )`);
+
+  db.exec("CREATE INDEX IF NOT EXISTS idx_conv_user ON conversations(user_id, timestamp)");
 
   return db;
 }

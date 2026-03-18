@@ -41,4 +41,47 @@ describe("Memory", () => {
     addKnowledge({ topic: "b", insight: "fact 2", source: "test" }, 100);
     expect(getKnowledgeCount()).toBe(2);
   });
+
+  describe("DB Schema", () => {
+    it("creates conversations table with user_id column", () => {
+      const d = getDB(dbPath);
+      const cols = d.pragma("table_info(conversations)") as Array<{ name: string }>;
+      const colNames = cols.map(c => c.name);
+      expect(colNames).toContain("user_id");
+      expect(colNames).toContain("tool_call_id");
+      expect(colNames).toContain("tool_calls");
+    });
+
+    it("creates conversation_summaries table", () => {
+      const d = getDB(dbPath);
+      const tables = d.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='conversation_summaries'").all();
+      expect(tables.length).toBe(1);
+    });
+
+    it("creates idx_conv_user index", () => {
+      const d = getDB(dbPath);
+      const indexes = d.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_conv_user'").all();
+      expect(indexes.length).toBe(1);
+    });
+
+    it("migrates old conversations table (empty)", async () => {
+      closeDB();
+      const Database = (await import("better-sqlite3")).default;
+      const oldDb = new Database(dbPath);
+      oldDb.exec(`
+        CREATE TABLE IF NOT EXISTS conversations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          channel TEXT NOT NULL,
+          role TEXT NOT NULL,
+          content TEXT NOT NULL,
+          timestamp INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+      `);
+      oldDb.close();
+      getDB(dbPath);
+      const d = getDB(dbPath);
+      const cols = d.pragma("table_info(conversations)") as Array<{ name: string }>;
+      expect(cols.map(c => c.name)).toContain("user_id");
+    });
+  });
 });
