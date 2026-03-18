@@ -4,29 +4,33 @@ import type { Tool, ToolResult } from "./types.js";
 
 const FAL_ENDPOINT = "https://fal.run/xai/grok-imagine-image/edit";
 
-/** Upload a buffer to catbox.moe and return its public URL. */
-async function uploadToCatbox(buffer: Buffer, filename: string): Promise<string> {
+/** Upload a buffer to fal.ai storage and return its public URL. */
+async function uploadToFal(buffer: Buffer, filename: string, falApiKey: string): Promise<string> {
   const ext = path.extname(filename).slice(1) || "bin";
   const mimeTypes: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg" };
-  const formData = new FormData();
-  formData.append("reqtype", "fileupload");
-  formData.append(
-    "fileToUpload",
-    new Blob([new Uint8Array(buffer)], { type: mimeTypes[ext] || "application/octet-stream" }),
-    filename,
-  );
-  const res = await fetch("https://catbox.moe/user/api.php", { method: "POST", body: formData });
-  const url = await res.text();
-  if (!url.startsWith("http")) throw new Error(`Upload failed: ${url.slice(0, 200)}`);
-  return url.trim();
-}
+  const contentType = mimeTypes[ext] || "application/octet-stream";
 
-/** Resolve reference photo to a public URL. If it's a local path, upload to catbox. */
-async function resolveReferenceUrl(ref: string): Promise<string> {
-  if (ref.startsWith("http")) return ref;
-  // Local file path — read and upload
-  const buffer = fs.readFileSync(ref);
-  return uploadToCatbox(buffer, path.basename(ref));
+  const res = await fetch("https://fal.run/fal-ai/any/upload", {
+    method: "PUT",
+    headers: {
+      Authorization: `Key ${falApiKey}`,
+      "Content-Type": contentType,
+    },
+    body: new Uint8Array(buffer),
+  });
+
+  if (!res.ok) {
+    // Fallback: use data URL
+    const base64 = buffer.toString("base64");
+    return `data:${contentType};base64,${base64}`;
+  }
+
+  const data = (await res.json()) as { url?: string };
+  if (data.url) return data.url;
+
+  // Fallback: data URL
+  const base64 = buffer.toString("base64");
+  return `data:${contentType};base64,${base64}`;
 }
 
 const MIRROR_KEYWORDS =
@@ -68,9 +72,17 @@ export class SelfieTool implements Tool {
     this.config = config;
   }
 
-  /** Set reference photo URL (e.g. from bot avatar at startup). */
-  setReferencePhoto(url: string): void {
-    this.config.referencePhotoUrl = url;
+  /** Set reference photo path or URL. */
+  setReferencePhoto(pathOrUrl: string): void {
+    this.config.referencePhotoUrl = pathOrUrl;
+  }
+
+  /** Resolve reference to a URL that fal.ai can access. */
+  private async resolveReferenceUrl(ref: string): Promise<string> {
+    if (ref.startsWith("http")) return ref;
+    // Local file — upload to fal.ai storage
+    const buffer = fs.readFileSync(ref);
+    return uploadToFal(buffer, path.basename(ref), this.config.falApiKey);
   }
 
   async execute(params: Record<string, unknown>): Promise<ToolResult> {
@@ -100,7 +112,7 @@ export class SelfieTool implements Tool {
     const prompt = buildPrompt(context, mode);
 
     try {
-      const refUrl = await resolveReferenceUrl(this.config.referencePhotoUrl);
+      const refUrl = await this.resolveReferenceUrl(this.config.referencePhotoUrl);
       console.log(`📸 Selfie: mode=${mode}, ref=${refUrl.slice(0, 80)}`);
 
       const response = await fetch(FAL_ENDPOINT, {
