@@ -453,6 +453,27 @@ export function registerHandlers(
   // /study
   bot.command("study", (ctx) => handleWithTyping(ctx, "/study"));
 
+  // Photos with /setphoto caption (grammy doesn't parse captions as commands)
+  bot.on("message:photo", async (ctx) => {
+    const caption = ctx.message.caption?.trim();
+    if (caption !== "/setphoto") return;
+    const photo = ctx.message.photo;
+    try {
+      const fileId = photo[photo.length - 1].file_id;
+      const file = await ctx.api.getFile(fileId);
+      const token = bot.token;
+      const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+      const res = await fetch(fileUrl);
+      const buffer = Buffer.from(await res.arrayBuffer());
+      const savePath = path.join(os.homedir(), ".betsy", "reference.jpg");
+      fs.writeFileSync(savePath, buffer);
+      onSetReferencePhoto?.(savePath);
+      await ctx.reply("✅ Фото сохранено как референс для селфи");
+    } catch {
+      await ctx.reply("Не удалось обработать фото");
+    }
+  });
+
   // Plain text messages
   bot.on("message:text", async (ctx) => {
     const userText = ctx.message.text;
