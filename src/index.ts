@@ -10,7 +10,10 @@ import { FilesTool } from "./core/tools/files.js";
 import { HttpTool } from "./core/tools/http.js";
 import { memoryTool } from "./core/tools/memory.js";
 import { selfConfigTool } from "./core/tools/self-config.js";
-import { schedulerTool } from "./core/tools/scheduler.js";
+import { SchedulerService } from "./core/tools/scheduler.js";
+import { SchedulerStore } from "./core/tools/scheduler-store.js";
+import { getDB } from "./core/memory/db.js";
+import type { Channel } from "./channels/types.js";
 import { sshTool } from "./core/tools/ssh.js";
 import { npmInstallTool } from "./core/tools/npm-install.js";
 import { SelfieTool } from "./core/tools/selfie.js";
@@ -70,12 +73,16 @@ async function main() {
 
   // Register tools
   const tools = new ToolRegistry();
+  const schedulerDb = getDB();
+  const schedulerStore = new SchedulerStore(schedulerDb);
+  schedulerStore.init();
+  const scheduler = new SchedulerService(schedulerStore);
   tools.register(new ShellTool());
   tools.register(new FilesTool());
   tools.register(new HttpTool());
   tools.register(memoryTool);
   tools.register(selfConfigTool);
-  tools.register(schedulerTool);
+  tools.register(scheduler.tool);
   tools.register(sshTool);
   tools.register(npmInstallTool);
   // Selfie tool — uses fal.ai key from selfies config, falls back to video config
@@ -107,11 +114,17 @@ async function main() {
   const { server, wss } = createServer({ port });
 
   // Start Telegram channel
+  let telegram: TelegramChannel | null = null;
   if (config.telegram?.token) {
     try {
-      const telegram = new TelegramChannel();
+      telegram = new TelegramChannel();
       telegram.onMessage(async (msg, onProgress) => {
         if (engine) {
+          scheduler.setMessageContext(
+            msg.channelName,
+            msg.userId,
+            engine.getHistory(msg.userId) ?? [],
+          );
           return engine.process(msg, onProgress);
         }
         return { text: "LLM не настроен. Открой дашборд для настройки." };
@@ -131,6 +144,46 @@ async function main() {
     }
   }
 
+  const channels = new Map<string, Channel>();
+  if (telegram) {
+    channels.set("telegram", telegram);
+  }
+
+  if (engine) {
+    scheduler.onTaskFire(async (task) => {
+      const channel = channels.get(task.channel);
+      if (!channel) {
+        console.error(`Scheduler: channel "${task.channel}" not available for task "${task.name}"`);
+        return;
+      }
+
+      const prompt = [
+        `Сработало запланированное задание "${task.name}".`,
+        `Задача: ${task.command}`,
+        task.context ? `\nКонтекст разговора при создании задачи:\n${task.context}` : "",
+        `\nНапиши владельцу сообщение в связи с этой задачей.`,
+      ].join("\n");
+
+      try {
+        const result = await engine.process({
+          channelName: task.channel,
+          userId: task.chatId,
+          text: prompt,
+          timestamp: Date.now(),
+          metadata: { scheduledTask: true },
+        });
+        await channel.send(task.chatId, result);
+        console.log(`✅ Scheduler: delivered "${task.name}" to ${task.channel}:${task.chatId}`);
+      } catch (err) {
+        console.error(`❌ Scheduler: failed to deliver "${task.name}":`, err);
+      }
+    });
+
+    await scheduler.recoverMissed();
+    scheduler.start();
+    console.log("✅ Планировщик запущен");
+  }
+
   // Auto-open browser on local machine
   if (os.platform() !== "linux") {
     const { execFile: execFileCb } = await import("node:child_process");
@@ -138,12 +191,13 @@ async function main() {
     execFileCb(opener, [`http://localhost:${port}`], () => {});
   }
 
-  setupShutdown(server, wss);
+  setupShutdown(server, wss, scheduler);
 }
 
-function setupShutdown(server: any, wss: any) {
+function setupShutdown(server: any, wss: any, scheduler?: SchedulerService) {
   const shutdown = () => {
     console.log("\nЗавершение работы...");
+    scheduler?.stop();
     wss.close();
     server.close();
     process.exit(0);

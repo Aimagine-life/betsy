@@ -22,6 +22,15 @@ export class Engine {
     this.deps = deps;
   }
 
+  /** Get conversation history for a user (for scheduler context). */
+  getHistory(userId: string): Array<{ role: string; content: string }> {
+    const history = this.histories.get(userId);
+    if (!history) return [];
+    return history
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" }));
+  }
+
   async process(msg: IncomingMessage, onProgress?: ProgressCallback): Promise<OutgoingMessage> {
     const llm = this.deps.llm.fast();
     const userId = msg.userId;
