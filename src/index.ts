@@ -10,6 +10,7 @@ import { ToolRegistry } from "./core/tools/registry.js";
 import { ShellTool } from "./core/tools/shell.js";
 import { FilesTool } from "./core/tools/files.js";
 import { HttpTool } from "./core/tools/http.js";
+import { BrowserTool } from "./core/tools/browser.js";
 import { memoryTool } from "./core/tools/memory.js";
 import { selfConfigTool } from "./core/tools/self-config.js";
 import { SchedulerService } from "./core/tools/scheduler.js";
@@ -82,6 +83,7 @@ async function main() {
   tools.register(new ShellTool());
   tools.register(new FilesTool());
   tools.register(new HttpTool());
+  tools.register(new BrowserTool());
   tools.register(memoryTool);
   tools.register(selfConfigTool);
   tools.register(scheduler.tool);

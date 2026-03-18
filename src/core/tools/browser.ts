@@ -1,12 +1,19 @@
 import type { Browser, BrowserContext, Page } from "playwright";
 import type { Tool, ToolParam, ToolResult } from "./types.js";
 
-type BrowserAction = "get_text" | "screenshot" | "search" | "click" | "fill" | "evaluate";
+const MAX_TEXT_CHARS = 4000;
+
+function truncate(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return text.slice(0, max) + `\n\n[truncated, showing first ${max} of ${text.length} chars]`;
+}
+
+type BrowserAction = "get_text" | "screenshot" | "click" | "fill" | "evaluate";
 
 const TIMEOUT = 30_000;
 
 const PARAMETERS: ToolParam[] = [
-  { name: "action", type: "string", description: "Action to perform: get_text, screenshot, search, click, fill, evaluate", required: true },
+  { name: "action", type: "string", description: "Action to perform: get_text, screenshot, click, fill, evaluate", required: true },
   { name: "url", type: "string", description: "URL to navigate to" },
   { name: "selector", type: "string", description: "CSS selector for click/fill actions" },
   { name: "value", type: "string", description: "Value for fill/search actions" },
@@ -15,7 +22,7 @@ const PARAMETERS: ToolParam[] = [
 
 export class BrowserTool implements Tool {
   readonly name = "browser";
-  readonly description = "Browse the web — open pages, search, take screenshots";
+  readonly description = "Browse websites with a real browser (Playwright). Use when the 'web' tool can't access a site, or for interactive tasks like clicking and filling forms.";
   readonly parameters = PARAMETERS;
 
   private browser: Browser | null = null;
@@ -36,8 +43,6 @@ export class BrowserTool implements Tool {
           return await this.getText(page, params.url as string | undefined);
         case "screenshot":
           return await this.screenshot(page, params.url as string | undefined);
-        case "search":
-          return await this.search(page, params.value as string | undefined);
         case "click":
           return await this.click(page, params.selector as string | undefined);
         case "fill":
@@ -89,7 +94,8 @@ export class BrowserTool implements Tool {
     if (!url) return { success: false, output: "", error: "Missing required parameter: url" };
     await page.goto(url, { timeout: TIMEOUT, waitUntil: "domcontentloaded" });
     const text = await page.textContent("body") ?? "";
-    return { success: true, output: text.replace(/\s+/g, " ").trim() };
+    const cleaned = text.replace(/\s+/g, " ").trim();
+    return { success: true, output: truncate(cleaned, MAX_TEXT_CHARS) };
   }
 
   private async screenshot(page: Page, url: string | undefined): Promise<ToolResult> {
@@ -97,30 +103,6 @@ export class BrowserTool implements Tool {
     await page.goto(url, { timeout: TIMEOUT, waitUntil: "domcontentloaded" });
     const buffer = await page.screenshot({ fullPage: true });
     return { success: true, output: buffer.toString("base64") };
-  }
-
-  private async search(page: Page, query: string | undefined): Promise<ToolResult> {
-    if (!query) return { success: false, output: "", error: "Missing required parameter: value (search query)" };
-    const encoded = encodeURIComponent(query);
-    await page.goto(`https://www.google.com/search?q=${encoded}`, { timeout: TIMEOUT, waitUntil: "domcontentloaded" });
-
-    const results = await page.evaluate(() => {
-      const items: { title: string; url: string; snippet: string }[] = [];
-      document.querySelectorAll("div.g").forEach((el) => {
-        const anchor = el.querySelector("a");
-        const title = el.querySelector("h3")?.textContent ?? "";
-        const snippet = el.querySelector("[data-sncf]")?.textContent
-          ?? el.querySelector(".VwiC3b")?.textContent
-          ?? "";
-        if (anchor?.href && title) {
-          items.push({ title, url: anchor.href, snippet });
-        }
-      });
-      return items.slice(0, 10);
-    });
-
-    const formatted = results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`).join("\n\n");
-    return { success: true, output: formatted || "No results found" };
   }
 
   private async click(page: Page, selector: string | undefined): Promise<ToolResult> {
