@@ -13,6 +13,7 @@ import { selfConfigTool } from "./core/tools/self-config.js";
 import { schedulerTool } from "./core/tools/scheduler.js";
 import { sshTool } from "./core/tools/ssh.js";
 import { npmInstallTool } from "./core/tools/npm-install.js";
+import { SelfieTool } from "./core/tools/selfie.js";
 
 function getAddress(): string {
   const nets = os.networkInterfaces();
@@ -77,6 +78,13 @@ async function main() {
   tools.register(schedulerTool);
   tools.register(sshTool);
   tools.register(npmInstallTool);
+  // Selfie tool — uses fal.ai key from selfies config, falls back to video config
+  const selfiesConfig = config.selfies as Record<string, string> | undefined;
+  const videoConfig = config.video as Record<string, string> | undefined;
+  tools.register(new SelfieTool({
+    falApiKey: selfiesConfig?.fal_api_key ?? videoConfig?.fal_api_key ?? "",
+    referencePhotoUrl: selfiesConfig?.reference_photo_url ?? "",
+  }));
   console.log(`🔧 Зарегистрировано инструментов: ${tools.list().length}`);
 
   // Setup Engine with personality and tools
