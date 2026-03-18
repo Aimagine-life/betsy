@@ -5,10 +5,15 @@ export interface ToolUseRequest {
   arguments: Record<string, unknown>;
 }
 
+/** A content part for multimodal messages. */
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 /** A single message in a chat conversation. */
 export interface LLMMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: string;
+  content: string | ContentPart[];
   /** Tool calls made by the assistant (role=assistant only). */
   toolCalls?: ToolUseRequest[];
   /** ID of the tool call this message is a result for (role=tool only). */

@@ -1,5 +1,5 @@
 import type { IncomingMessage, OutgoingMessage, ProgressCallback } from "./types.js";
-import type { LLMClient, LLMMessage, ToolDefinition } from "./llm/types.js";
+import type { LLMClient, LLMMessage, ContentPart, ToolDefinition } from "./llm/types.js";
 import type { ToolRegistry } from "./tools/registry.js";
 import type { ToolResult } from "./tools/types.js";
 import { buildSystemPrompt, type PromptConfig } from "./prompt.js";
@@ -28,7 +28,12 @@ export class Engine {
     if (!history) return [];
     return history
       .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" }));
+      .map((m) => ({
+        role: m.role,
+        content: typeof m.content === "string"
+          ? m.content
+          : m.content.filter((p) => p.type === "text").map((p) => (p as { text: string }).text).join("\n"),
+      }));
   }
 
   async process(msg: IncomingMessage, onProgress?: ProgressCallback): Promise<OutgoingMessage> {
@@ -44,12 +49,24 @@ export class Engine {
     // Build system prompt with memory context
     const systemPrompt = this.buildPromptWithMemory(msg.text, userId);
 
-    // Add user message (with reply context if replying to a specific message)
+    // Add user message (with reply context and/or images if present)
     const replyTo = msg.metadata?.replyToText as string | undefined;
-    const userContent = replyTo
+    const textContent = replyTo
       ? `[В ответ на сообщение: "${replyTo}"]\n\n${msg.text}`
       : msg.text;
-    history.push({ role: "user", content: userContent });
+
+    if (msg.images?.length) {
+      const parts: ContentPart[] = [
+        { type: "text", text: textContent },
+        ...msg.images.map((b64): ContentPart => ({
+          type: "image_url",
+          image_url: { url: `data:image/jpeg;base64,${b64}` },
+        })),
+      ];
+      history.push({ role: "user", content: parts });
+    } else {
+      history.push({ role: "user", content: textContent });
+    }
 
     // Trim history to avoid context overflow
     if (history.length > MAX_HISTORY) {

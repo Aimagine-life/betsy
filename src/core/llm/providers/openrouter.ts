@@ -32,10 +32,11 @@ function toOpenAIMessages(messages: LLMMessage[]): OpenAI.ChatCompletionMessageP
       };
     }
 
+    // Multimodal content (text + images) — pass array as-is
     return {
       role: m.role as "system" | "user" | "assistant",
       content: m.content,
-    };
+    } as OpenAI.ChatCompletionMessageParam;
   });
 }
 

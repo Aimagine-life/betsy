@@ -4,6 +4,8 @@ export interface IncomingMessage {
   text: string
   timestamp: number
   metadata?: Record<string, unknown>
+  /** Base64-encoded images attached to the message or quoted reply. */
+  images?: string[]
 }
 
 export interface OutgoingMessage {

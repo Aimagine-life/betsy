@@ -219,10 +219,37 @@ function commandBody(ctx: Context, command: string): string {
   return raw.replace(new RegExp(`^/${command}\\s*`), "");
 }
 
+/** Download a Telegram photo (largest size) as base64. */
+async function downloadPhotoBase64(ctx: Context, photo: { file_id: string }[], botToken: string): Promise<string | null> {
+  try {
+    const fileId = photo[photo.length - 1].file_id;
+    const file = await ctx.api.getFile(fileId);
+    const fileUrl = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`;
+    const res = await fetch(fileUrl);
+    const buffer = Buffer.from(await res.arrayBuffer());
+    return buffer.toString("base64");
+  } catch {
+    return null;
+  }
+}
+
 /** Convert a grammY Context into a channel-neutral IncomingMessage. */
-function toIncoming(ctx: Context, text: string): IncomingMessage {
+async function toIncoming(ctx: Context, text: string, botToken: string): Promise<IncomingMessage> {
   const reply = ctx.message?.reply_to_message;
   const replyToText = reply?.text ?? reply?.caption;
+
+  // Collect images: from the message itself and from the replied-to message
+  const images: string[] = [];
+  const msgPhoto = ctx.message?.photo;
+  if (msgPhoto?.length) {
+    const b64 = await downloadPhotoBase64(ctx, msgPhoto, botToken);
+    if (b64) images.push(b64);
+  }
+  const replyPhoto = reply?.photo;
+  if (replyPhoto?.length) {
+    const b64 = await downloadPhotoBase64(ctx, replyPhoto, botToken);
+    if (b64) images.push(b64);
+  }
 
   return {
     channelName: "telegram",
@@ -235,6 +262,7 @@ function toIncoming(ctx: Context, text: string): IncomingMessage {
       firstName: ctx.from?.first_name,
       ...(replyToText && { replyToText }),
     },
+    ...(images.length && { images }),
   };
 }
 
@@ -372,7 +400,7 @@ export function registerHandlers(
     };
 
     try {
-      const response = await handler(toIncoming(ctx, text), onProgress);
+      const response = await handler(await toIncoming(ctx, text, bot.token), onProgress);
       stopTyping();
       if (draftTimer) clearTimeout(draftTimer);
 
@@ -457,25 +485,32 @@ export function registerHandlers(
   // /study
   bot.command("study", (ctx) => handleWithTyping(ctx, "/study"));
 
-  // Photos with /setphoto caption (grammy doesn't parse captions as commands)
+  // Photos: /setphoto saves reference, everything else is sent to the LLM
   bot.on("message:photo", async (ctx) => {
     const caption = ctx.message.caption?.trim();
-    if (caption !== "/setphoto") return;
-    const photo = ctx.message.photo;
-    try {
-      const fileId = photo[photo.length - 1].file_id;
-      const file = await ctx.api.getFile(fileId);
-      const token = bot.token;
-      const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
-      const res = await fetch(fileUrl);
-      const buffer = Buffer.from(await res.arrayBuffer());
-      const savePath = path.join(os.homedir(), ".betsy", "reference.jpg");
-      fs.writeFileSync(savePath, buffer);
-      onSetReferencePhoto?.(savePath);
-      await ctx.reply("✅ Фото сохранено как референс для селфи");
-    } catch {
-      await ctx.reply("Не удалось обработать фото");
+
+    // /setphoto — save reference photo
+    if (caption === "/setphoto") {
+      const photo = ctx.message.photo;
+      try {
+        const fileId = photo[photo.length - 1].file_id;
+        const file = await ctx.api.getFile(fileId);
+        const token = bot.token;
+        const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+        const res = await fetch(fileUrl);
+        const buffer = Buffer.from(await res.arrayBuffer());
+        const savePath = path.join(os.homedir(), ".betsy", "reference.jpg");
+        fs.writeFileSync(savePath, buffer);
+        onSetReferencePhoto?.(savePath);
+        await ctx.reply("✅ Фото сохранено как референс для селфи");
+      } catch {
+        await ctx.reply("Не удалось обработать фото");
+      }
+      return;
     }
+
+    // Regular photo — send to LLM with caption as text
+    await handleWithTyping(ctx, caption || "Что на этом фото?");
   });
 
   // Plain text messages
