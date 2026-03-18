@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
-import { loadConfig, isConfigured, type BetsyConfig } from "./core/config.js";
+import { loadConfig, saveConfig, isConfigured, type BetsyConfig } from "./core/config.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -402,6 +402,43 @@ async function handleSetupApi(
 
       case "/api/setup/complete": {
         if (req.method !== "POST") { json(res, { error: "POST only" }, 405); return; }
+        ctx.mode = "running";
+        json(res, { ok: true, mode: "running" });
+        break;
+      }
+
+      case "/api/setup/wizard": {
+        if (req.method !== "POST") { json(res, { error: "POST only" }, 405); return; }
+        const wizardBody = parseJsonBody<Record<string, unknown>>(await readBody(req));
+        const personality = wizardBody.personality as Record<string, string> | null;
+        const channels = wizardBody.channels as Record<string, unknown> | null;
+
+        const newConfig: Record<string, unknown> = {
+          agent: {
+            name: personality?.name || "Betsy",
+            gender: personality?.gender || "female",
+            personality: {
+              tone: personality?.tone,
+              style: personality?.responseStyle,
+              custom_instructions: personality?.customInstructions,
+            },
+          },
+          llm: {
+            provider: "openrouter",
+            api_key: wizardBody.apiKey as string,
+          },
+          memory: { max_knowledge: 200, study_interval_min: 30, learning_enabled: true, context_budget: 40000 },
+          channels: channels ?? {},
+        };
+
+        if (wizardBody.password && typeof wizardBody.password === "string") {
+          const { createHash } = await import("node:crypto");
+          const hash = createHash("sha256").update(wizardBody.password).digest("hex");
+          (newConfig as Record<string, unknown>).security = { password_hash: hash };
+        }
+
+        saveConfig(newConfig as BetsyConfig);
+        ctx.config = loadConfig();
         ctx.mode = "running";
         json(res, { ok: true, mode: "running" });
         break;

@@ -2,6 +2,7 @@ import { useState } from "react";
 
 export interface PersonalityData {
   name: string;
+  gender: "female" | "male" | "neutral";
   tone: string;
   responseStyle: string;
   customInstructions: string;
@@ -18,6 +19,12 @@ const TONES = [
   { value: "professional", label: "Профессиональная", icon: "M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" },
 ];
 
+const GENDERS = [
+  { value: "female", label: "Женский" },
+  { value: "male", label: "Мужской" },
+  { value: "neutral", label: "Нейтральный" },
+];
+
 const STYLES = [
   { value: "concise", label: "Кратко" },
   { value: "detailed", label: "Подробно" },
@@ -25,12 +32,13 @@ const STYLES = [
 
 export function PersonalityStep({ onNext }: PersonalityStepProps) {
   const [name, setName] = useState("Betsy");
+  const [gender, setGender] = useState<"female" | "male" | "neutral">("female");
   const [tone, setTone] = useState("professional");
   const [responseStyle, setResponseStyle] = useState("concise");
   const [customInstructions, setCustomInstructions] = useState("");
 
   function handleNext() {
-    onNext({ name: name.trim() || "Betsy", tone, responseStyle, customInstructions: customInstructions.trim() });
+    onNext({ name: name.trim() || "Betsy", gender, tone, responseStyle, customInstructions: customInstructions.trim() });
   }
 
   const inputCls =
@@ -58,6 +66,27 @@ export function PersonalityStep({ onNext }: PersonalityStepProps) {
           placeholder="Betsy"
           className={inputCls}
         />
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider block">
+          Пол
+        </label>
+        <div className="grid grid-cols-3 gap-2">
+          {GENDERS.map((g) => (
+            <button
+              key={g.value}
+              onClick={() => setGender(g.value as typeof gender)}
+              className={`px-4 py-3 rounded-lg border text-[13px] font-medium transition-all ${
+                gender === g.value
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-zinc-200"
+                  : "border-zinc-800/80 bg-zinc-900/40 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300"
+              }`}
+            >
+              {g.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="space-y-2">

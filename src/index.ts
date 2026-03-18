@@ -111,6 +111,7 @@ async function main() {
     llm,
     config: {
       name,
+      gender: config.agent?.gender ?? "female",
       personality: {
         tone: personality.tone,
         responseStyle: personality.style,

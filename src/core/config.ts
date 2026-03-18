@@ -38,6 +38,7 @@ const llmSchema = z.union([
 const configSchema = z.object({
   agent: z.object({
     name: z.string().default("Betsy"),
+    gender: z.enum(["female", "male", "neutral"]).default("female"),
     personality: personalitySchema,
   }).default({ name: "Betsy" }),
 
@@ -104,6 +105,7 @@ function normalizeConfig(raw: Record<string, unknown>): Record<string, unknown> 
   // agent
   out.agent = {
     name: raw.name ?? "Betsy",
+    gender: raw.gender ?? "female",
     personality: {
       tone: raw.tone,
       style: raw.style,

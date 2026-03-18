@@ -1,63 +1,54 @@
-import fs from "node:fs";
-import path from "node:path";
-import os from "node:os";
 import type { Tool, ToolResult } from "./types.js";
-
-const CONFIG_DIR = path.join(os.homedir(), ".betsy");
-const CONFIG_PATH = path.join(CONFIG_DIR, "config.yaml");
+import { loadConfig, saveConfig, type BetsyConfig } from "../config.js";
 
 // ---------------------------------------------------------------------------
-// Minimal YAML helpers (no external dependency)
-//
-// The config file uses a flat key: value structure, which is simple enough to
-// parse and serialise without pulling in a full YAML library.
+// Helpers for nested key access (e.g. "agent.gender", "memory.max_knowledge")
 // ---------------------------------------------------------------------------
 
-type ConfigMap = Record<string, string>;
+function getNestedValue(obj: Record<string, unknown>, keyPath: string): unknown {
+  const parts = keyPath.split(".");
+  let current: unknown = obj;
+  for (const part of parts) {
+    if (current === null || current === undefined || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
 
-function parseYaml(text: string): ConfigMap {
-  const map: ConfigMap = {};
-  for (const line of text.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const idx = trimmed.indexOf(":");
-    if (idx === -1) continue;
-    const key = trimmed.slice(0, idx).trim();
-    let value = trimmed.slice(idx + 1).trim();
-    // Strip surrounding quotes
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
+function setNestedValue(obj: Record<string, unknown>, keyPath: string, value: unknown): void {
+  const parts = keyPath.split(".");
+  let current: Record<string, unknown> = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const part = parts[i];
+    if (current[part] === undefined || current[part] === null || typeof current[part] !== "object") {
+      current[part] = {};
     }
-    map[key] = value;
+    current = current[part] as Record<string, unknown>;
   }
-  return map;
+  current[parts[parts.length - 1]] = value;
 }
 
-function serializeYaml(map: ConfigMap): string {
-  return Object.entries(map)
-    .map(([k, v]) => {
-      // Quote values that contain special YAML characters
-      const needsQuoting = /[:#\[\]{},>|&!%@`]/.test(v) || v === "";
-      const quoted = needsQuoting ? `"${v.replace(/"/g, '\\"')}"` : v;
-      return `${k}: ${quoted}`;
-    })
-    .join("\n") + "\n";
+/** Try to parse value as number or boolean, otherwise keep as string */
+function coerceValue(raw: string): unknown {
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  const num = Number(raw);
+  if (!isNaN(num) && raw.trim() !== "") return num;
+  return raw;
 }
 
-function readConfig(): ConfigMap {
-  try {
-    return parseYaml(fs.readFileSync(CONFIG_PATH, "utf-8"));
-  } catch {
-    return {};
+/** Flatten a nested object into dot-separated key paths for listing */
+function flattenObject(obj: Record<string, unknown>, prefix = ""): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const fullKey = prefix ? `${prefix}.${key}` : key;
+    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+      Object.assign(result, flattenObject(value as Record<string, unknown>, fullKey));
+    } else {
+      result[fullKey] = value;
+    }
   }
-}
-
-function writeConfig(map: ConfigMap): void {
-  fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  fs.writeFileSync(CONFIG_PATH, serializeYaml(map));
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -69,12 +60,15 @@ function handleGet(params: Record<string, unknown>): ToolResult {
   if (typeof key !== "string" || !key.trim()) {
     return { success: false, output: "Missing required parameter: key", error: "missing_param" };
   }
-  const config = readConfig();
-  const value = config[key.trim()];
+  const config = loadConfig();
+  if (!config) {
+    return { success: false, output: "Config file not found.", error: "no_config" };
+  }
+  const value = getNestedValue(config as unknown as Record<string, unknown>, key.trim());
   if (value === undefined) {
     return { success: true, output: `Key "${key.trim()}" is not set.` };
   }
-  return { success: true, output: `${key.trim()}: ${value}` };
+  return { success: true, output: `${key.trim()}: ${JSON.stringify(value)}` };
 }
 
 function handleSet(params: Record<string, unknown>): ToolResult {
@@ -86,19 +80,25 @@ function handleSet(params: Record<string, unknown>): ToolResult {
   if (value === undefined || value === null) {
     return { success: false, output: "Missing required parameter: value", error: "missing_param" };
   }
-  const config = readConfig();
-  config[key.trim()] = String(value);
-  writeConfig(config);
-  return { success: true, output: `Set ${key.trim()} = ${String(value)}` };
+
+  const config = loadConfig() ?? { agent: { name: "Betsy" } } as BetsyConfig;
+  const coerced = typeof value === "string" ? coerceValue(value) : value;
+  setNestedValue(config as unknown as Record<string, unknown>, key.trim(), coerced);
+  saveConfig(config);
+  return { success: true, output: `Set ${key.trim()} = ${JSON.stringify(coerced)}` };
 }
 
 function handleList(): ToolResult {
-  const config = readConfig();
-  const keys = Object.keys(config);
+  const config = loadConfig();
+  if (!config) {
+    return { success: true, output: "Config is empty (no config file found)." };
+  }
+  const flat = flattenObject(config as unknown as Record<string, unknown>);
+  const keys = Object.keys(flat);
   if (keys.length === 0) {
     return { success: true, output: "Config is empty." };
   }
-  const lines = keys.map((k) => `- ${k}: ${config[k]}`);
+  const lines = keys.map((k) => `- ${k}: ${JSON.stringify(flat[k])}`);
   return { success: true, output: `${keys.length} key(s):\n${lines.join("\n")}` };
 }
 
@@ -106,11 +106,12 @@ export const selfConfigTool: Tool = {
   name: "self_config",
   description:
     "Read or write Betsy's own configuration stored in ~/.betsy/config.yaml. " +
+    "Uses dot-notation for nested keys (e.g. agent.name, agent.gender, memory.max_knowledge). " +
     "action=get retrieves a single key, action=set writes a key-value pair, " +
     "action=list shows all configuration entries.",
   parameters: [
     { name: "action", type: "string", description: "One of: get, set, list", required: true },
-    { name: "key", type: "string", description: "Config key (required for get/set)" },
+    { name: "key", type: "string", description: "Config key in dot-notation, e.g. agent.gender (required for get/set)" },
     { name: "value", type: "string", description: "Config value (required for set)" },
   ],
 
