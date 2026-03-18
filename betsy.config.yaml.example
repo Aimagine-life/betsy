@@ -36,3 +36,5 @@ plugins:
     enabled: false
   selfies:
     enabled: false
+    # fal_api_key: "key-..."
+    # reference_photo_url: "https://..."
