@@ -21,8 +21,10 @@ llm:
   fast_model: google/gemini-2.5-flash
   strong_model: anthropic/claude-sonnet-4
   # fallback_models:                           # Free models for when balance runs out
-  #   - google/gemini-2.5-flash:free
-  #   - deepseek/deepseek-v3.2-20251201:free
+  #   - qwen/qwen3-coder:free
+  #   - nvidia/nemotron-3-super-120b-a12b:free
+  #   - mistralai/mistral-small-3.1-24b-instruct:free
+  #   - meta-llama/llama-3.3-70b-instruct:free
 
 channels:
   browser:
