@@ -11,6 +11,7 @@ import { ShellTool } from "./core/tools/shell.js";
 import { FilesTool } from "./core/tools/files.js";
 import { HttpTool } from "./core/tools/http.js";
 import { BrowserTool } from "./core/tools/browser.js";
+import { WebTool } from "./core/tools/web.js";
 import { memoryTool } from "./core/tools/memory.js";
 import { selfConfigTool } from "./core/tools/self-config.js";
 import { SchedulerService } from "./core/tools/scheduler.js";
@@ -97,6 +98,11 @@ async function main() {
     referencePhotoUrl: selfiesConfig?.reference_photo_url,
   });
   tools.register(selfieTool);
+  // Web tool — conditional on google config
+  const googleConfig = (config as any).google as { api_key: string; cx: string } | undefined;
+  if (googleConfig?.api_key && googleConfig?.cx) {
+    tools.register(new WebTool({ apiKey: googleConfig.api_key, cx: googleConfig.cx }));
+  }
   console.log(`🔧 Зарегистрировано инструментов: ${tools.list().length}`);
 
   // Setup Engine with personality and tools

@@ -10,7 +10,7 @@ describe("BrowserTool", () => {
 
   it("has correct description", () => {
     const tool = new BrowserTool();
-    expect(tool.description).toContain("Browse the web");
+    expect(tool.description).toContain("Browse websites");
   });
 
   it("returns error for missing action", async () => {
