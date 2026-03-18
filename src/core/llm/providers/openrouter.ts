@@ -94,15 +94,16 @@ export interface BalanceInfo {
 export async function checkBalance(apiKey: string): Promise<BalanceInfo> {
   const res = await fetch("https://openrouter.ai/api/v1/auth/key", {
     headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok) throw new Error(`Balance check failed: ${res.status}`);
-  const data = (await res.json()) as { data?: { usage?: number; limit?: number } };
+  const data = (await res.json()) as { data?: { usage?: number; limit?: number | null } };
   const usage = data.data?.usage ?? 0;
-  const limit = data.data?.limit ?? 0;
+  const limit = data.data?.limit ?? null;
   return {
-    hasBalance: limit > 0 && usage < limit,
+    hasBalance: limit === null || (limit > 0 && usage < limit),
     usage,
-    limit,
+    limit: limit ?? 0,
   };
 }
 
