@@ -68,7 +68,7 @@ Send a voice message — she replies with a voice message. Via MiniMax (built-in
 Betsy sends video circles with lip-sync — lips move in sync with speech. Like a real video call, but in Telegram.
 
 <p align="center">
-  <img src="https://i.ibb.co/hRGwfzBc/0319.gif" alt="Betsy video circles in Telegram" width="350" />
+  <img src="https://i.ibb.co/7N0tSqnj/0319-1.gif" alt="Betsy video circles in Telegram" width="350" />
 </p>
 
 ### 📸 Selfies
