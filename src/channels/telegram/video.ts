@@ -18,7 +18,7 @@ async function uploadTempFile(buffer: Buffer, filename: string): Promise<string>
   formData.append("reqtype", "fileupload");
   formData.append(
     "fileToUpload",
-    new Blob([buffer], { type: mimeTypes[ext] || "application/octet-stream" }),
+    new Blob([new Uint8Array(buffer)], { type: mimeTypes[ext] || "application/octet-stream" }),
     filename,
   );
 

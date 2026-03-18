@@ -4,7 +4,15 @@ import { isConfigured, loadConfig, getAgentName, getPersonality, getLLMApiKey } 
 import { TelegramChannel } from "./channels/telegram/index.js";
 import { LLMRouter } from "./core/llm/router.js";
 import { Engine } from "./core/engine.js";
-import { getPersonality } from "./core/config.js";
+import { ToolRegistry } from "./core/tools/registry.js";
+import { ShellTool } from "./core/tools/shell.js";
+import { FilesTool } from "./core/tools/files.js";
+import { HttpTool } from "./core/tools/http.js";
+import { memoryTool } from "./core/tools/memory.js";
+import { selfConfigTool } from "./core/tools/self-config.js";
+import { schedulerTool } from "./core/tools/scheduler.js";
+import { sshTool } from "./core/tools/ssh.js";
+import { npmInstallTool } from "./core/tools/npm-install.js";
 
 function getAddress(): string {
   const nets = os.networkInterfaces();
@@ -59,7 +67,19 @@ async function main() {
     console.log("✅ LLM подключён");
   }
 
-  // Setup Engine with personality
+  // Register tools
+  const tools = new ToolRegistry();
+  tools.register(new ShellTool());
+  tools.register(new FilesTool());
+  tools.register(new HttpTool());
+  tools.register(memoryTool);
+  tools.register(selfConfigTool);
+  tools.register(schedulerTool);
+  tools.register(sshTool);
+  tools.register(npmInstallTool);
+  console.log(`🔧 Зарегистрировано инструментов: ${tools.list().length}`);
+
+  // Setup Engine with personality and tools
   const personality = getPersonality(config);
   const engine = llm ? new Engine({
     llm,
@@ -71,6 +91,7 @@ async function main() {
         customInstructions: personality.customInstructions,
       },
     },
+    tools,
   }) : null;
 
   // Start HTTP server

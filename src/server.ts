@@ -373,7 +373,7 @@ async function handleConfigPost(
 ) {
   try {
     const body = parseJsonBody<Record<string, unknown>>(await readBody(req));
-    ctx.config = body;
+    ctx.config = body as BetsyConfig;
     json(res, { ok: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Invalid request";

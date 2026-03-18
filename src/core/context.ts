@@ -1,4 +1,4 @@
-import type { LLMMessage } from "../llm/types.js";
+import type { LLMMessage } from "./llm/types.js";
 
 export class ContextManager {
   private maxTokens: number;

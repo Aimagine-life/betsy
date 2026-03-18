@@ -1,12 +1,11 @@
-import crypto from "node:crypto";
 import type { Tool, ToolResult } from "./types.js";
 import {
-  loadKnowledge,
-  storeKnowledge,
-  deleteKnowledge,
-  type KnowledgeEntry,
-} from "../../memory/knowledge.js";
-import { searchMemory } from "../../memory/search.js";
+  addKnowledge,
+  searchKnowledge,
+  getAllKnowledge,
+  type KnowledgeRow,
+} from "../memory/knowledge.js";
+import { getDB } from "../memory/db.js";
 
 function requireString(
   params: Record<string, unknown>,
@@ -26,14 +25,14 @@ function handleSearch(params: Record<string, unknown>): ToolResult {
       ? params.limit
       : 5;
 
-  const hits = searchMemory(query, limit);
+  const hits = searchKnowledge(query, limit);
 
   if (hits.length === 0) {
     return { success: true, output: "No relevant memories found." };
   }
 
   const summary = hits
-    .map((h, i) => `${i + 1}. [${h.type}] ${h.text.slice(0, 300)}`)
+    .map((h: KnowledgeRow, i: number) => `${i + 1}. [${h.topic}] ${h.insight.slice(0, 300)}`)
     .join("\n\n");
 
   return { success: true, output: summary };
@@ -41,47 +40,35 @@ function handleSearch(params: Record<string, unknown>): ToolResult {
 
 function handleSave(params: Record<string, unknown>): ToolResult {
   const insight = requireString(params, "content");
-  const specialty =
-    typeof params.specialty === "string" && params.specialty.trim()
-      ? params.specialty.trim()
-      : "general";
   const topic =
     typeof params.topic === "string" && params.topic.trim()
-      ? (params.topic.trim() as KnowledgeEntry["topic"])
-      : "specialty_research";
+      ? params.topic.trim()
+      : "general";
 
-  const entry: KnowledgeEntry = {
-    id: crypto.randomUUID(),
-    topic,
-    specialty,
-    insight,
-    source: "memory_tool",
-    timestamp: Date.now(),
-  };
-
-  storeKnowledge(entry);
-  return { success: true, output: `Saved knowledge entry ${entry.id}.` };
+  addKnowledge({ topic, insight, source: "memory_tool" });
+  return { success: true, output: "Saved knowledge entry." };
 }
 
 function handleDelete(params: Record<string, unknown>): ToolResult {
   const id = requireString(params, "id");
-  const deleted = deleteKnowledge(id);
-  if (!deleted) {
+  const db = getDB();
+  const result = db.prepare("DELETE FROM knowledge WHERE id = ?").run(Number(id));
+  if (result.changes === 0) {
     return { success: false, output: `Entry not found: ${id}`, error: "not_found" };
   }
   return { success: true, output: `Deleted entry ${id}.` };
 }
 
 function handleList(): ToolResult {
-  const entries = loadKnowledge();
+  const entries = getAllKnowledge();
   if (entries.length === 0) {
     return { success: true, output: "Knowledge base is empty." };
   }
 
   const summary = entries
     .map(
-      (e) =>
-        `- ${e.id}: [${e.topic}/${e.specialty}] ${e.insight.slice(0, 120)}`,
+      (e: KnowledgeRow) =>
+        `- ${e.id}: [${e.topic}] ${e.insight.slice(0, 120)}`,
     )
     .join("\n");
 
@@ -102,8 +89,7 @@ export const memoryTool: Tool = {
     { name: "action", type: "string", description: "One of: search, save, delete, list", required: true },
     { name: "query", type: "string", description: "Search query (required for action=search)" },
     { name: "content", type: "string", description: "Knowledge content to save (required for action=save)" },
-    { name: "specialty", type: "string", description: "Specialty tag for the entry (optional, default: general)" },
-    { name: "topic", type: "string", description: "Topic: feedback_analysis, specialty_research, or task_simulation (optional)" },
+    { name: "topic", type: "string", description: "Topic tag for the entry (optional, default: general)" },
     { name: "id", type: "string", description: "Entry ID (required for action=delete)" },
     { name: "limit", type: "number", description: "Max results for search (default 5)" },
   ],
