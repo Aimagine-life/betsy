@@ -550,20 +550,13 @@ async function handleSetupApi(
           json(res, { error: "API ключ и изображение (base64) обязательны" }, 400);
           return;
         }
-        const analyzeRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${analyzeKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
-            messages: [{
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: `Analyze this avatar image and suggest personality traits for an AI assistant that would match this character visually.
+        const visionModels = [
+          "google/gemini-2.5-flash",
+          "google/gemini-2.0-flash-exp:free",
+          "qwen/qwen-2.5-vl-72b-instruct:free",
+          "meta-llama/llama-4-maverick:free",
+        ];
+        const analyzePrompt = `Analyze this avatar image and suggest personality traits for an AI assistant that would match this character visually.
 
 Return ONLY valid JSON (no markdown, no backticks):
 {
@@ -583,22 +576,43 @@ Return ONLY valid JSON (no markdown, no backticks):
   "empathy": 0-4 (0=neutral, 4=deeply caring),
   "criticism": 0-4 (0=agreeable, 4=argumentative),
   "description": "brief character description in Russian, 1-2 sentences"
-}`
-                },
-                {
-                  type: "image_url",
-                  image_url: { url: `data:image/png;base64,${body.image}` },
-                },
-              ],
-            }],
-          }),
-        });
-        if (!analyzeRes.ok) {
-          json(res, { error: "Ошибка анализа аватара" }, 500);
+}`;
+        const analyzeMessages = [{
+          role: "user",
+          content: [
+            { type: "text", text: analyzePrompt },
+            { type: "image_url", image_url: { url: `data:image/png;base64,${body.image}` } },
+          ],
+        }];
+
+        let content = "";
+        for (const model of visionModels) {
+          try {
+            const analyzeRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${analyzeKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ model, messages: analyzeMessages }),
+            });
+            if (analyzeRes.ok) {
+              const result = await analyzeRes.json() as { choices?: { message?: { content?: string } }[] };
+              content = result.choices?.[0]?.message?.content ?? "";
+              if (content) {
+                console.log(`✅ Avatar analysis: ${model}`);
+                break;
+              }
+            }
+            console.log(`⚠️ Avatar analysis: ${model} failed (${analyzeRes.status}), trying next...`);
+          } catch (err) {
+            console.log(`⚠️ Avatar analysis: ${model} error: ${err instanceof Error ? err.message : err}`);
+          }
+        }
+        if (!content) {
+          json(res, { error: "Ошибка анализа аватара — все модели недоступны" }, 500);
           return;
         }
-        const result = await analyzeRes.json() as { choices?: { message?: { content?: string } }[] };
-        const content = result.choices?.[0]?.message?.content ?? "";
         try {
           const jsonMatch = content.match(/\{[\s\S]*\}/);
           const parsed = JSON.parse(jsonMatch?.[0] ?? content);
