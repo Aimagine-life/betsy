@@ -6,6 +6,7 @@ import { buildSystemPrompt, type PromptConfig } from "./prompt.js";
 import { searchKnowledge } from "./memory/knowledge.js";
 import { saveMessage, loadHistory, extractText } from "./memory/conversations.js";
 import { compactHistory } from "./memory/compaction.js";
+import { LLMUnavailableError } from "./llm/router.js";
 
 function historyChars(history: LLMMessage[]): number {
   let total = 0;
@@ -25,6 +26,7 @@ const MAX_TURNS = 20;
 const MAX_HISTORY = 40;
 export const MAX_PROMPT_TOKENS = 128_000;
 export const MAX_SAME_TOOL = 5;
+const PROCESS_TIMEOUT = 90_000; // 90 seconds max for entire process() call
 
 export interface EngineDeps {
   llm: { fast(): LLMClient; strong(): LLMClient };
@@ -106,9 +108,19 @@ export class Engine {
       let lastMediaUrl: string | undefined;
       const toolCallCounts = new Map<string, number>();
       let compactionAttempted = false;
+      const processStart = Date.now();
 
       // Agentic loop: LLM → tool calls → execute → repeat
       for (let turn = 0; turn < MAX_TURNS; turn++) {
+        // Check total time budget
+        if (Date.now() - processStart > PROCESS_TIMEOUT) {
+          const text = "Извини, обработка заняла слишком много времени. Попробуй ещё раз.";
+          history.push({ role: "assistant", content: text });
+          saveMessage(userId, msg.channelName, "assistant", text);
+          console.log(JSON.stringify({ tag: "engine:limit", reason: "timeout", elapsedMs: Date.now() - processStart }));
+          return { text };
+        }
+
         onProgress?.({ type: "thinking" });
 
         const messages: LLMMessage[] = [
@@ -273,6 +285,12 @@ export class Engine {
       saveMessage(userId, msg.channelName, "assistant", text);
       return { text };
     } catch (err) {
+      if (err instanceof LLMUnavailableError) {
+        const text = "Извини, сейчас не могу ответить — все модели недоступны. Попробуй через пару минут.";
+        history.push({ role: "assistant", content: text });
+        saveMessage(userId, msg.channelName, "assistant", text);
+        return { text };
+      }
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error("Engine error:", errorMsg);
       return { text: `Ошибка: ${errorMsg}` };

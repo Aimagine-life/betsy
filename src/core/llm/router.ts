@@ -18,6 +18,10 @@ class ModelTimeoutError extends Error {
   constructor() { super("Model timed out"); }
 }
 
+export class LLMUnavailableError extends Error {
+  constructor() { super("All LLM models unavailable"); }
+}
+
 function withModelTimeout<T>(promise: Promise<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new ModelTimeoutError()), PER_MODEL_TIMEOUT);
@@ -103,8 +107,8 @@ export class LLMRouter {
   private createProxy(getDelegate: () => LLMClient): LLMClient {
     return {
       chat: async (messages: LLMMessage[], tools?: ToolDefinition[]): Promise<LLMResponse> => {
-        // Try up to 3 full rounds of all models before giving up
-        const maxAttempts = (this.fallbackModels.length + 1) * 5;
+        // Try each model once: primary + all fallbacks
+        const maxAttempts = this.fallbackModels.length + 1;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
           try {
             const response = await withModelTimeout(getDelegate().chat(messages, tools));
@@ -118,11 +122,12 @@ export class LLMRouter {
             throw err;
           }
         }
-        throw new Error("All LLM models unavailable after 5 rounds");
+        throw new LLMUnavailableError();
       },
 
       chatStream: async (messages: LLMMessage[], onChunk: StreamCallback, tools?: ToolDefinition[]): Promise<LLMResponse> => {
-        const maxAttempts = (this.fallbackModels.length + 1) * 5;
+        // Try each model once: primary + all fallbacks
+        const maxAttempts = this.fallbackModels.length + 1;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
           let chunksDelivered = false;
           try {
@@ -141,7 +146,7 @@ export class LLMRouter {
             throw err;
           }
         }
-        throw new Error("All LLM models unavailable after 5 rounds");
+        throw new LLMUnavailableError();
       },
     };
   }
@@ -182,10 +187,8 @@ export class LLMRouter {
   private async tryNextFallback(): Promise<boolean> {
     this.currentFallbackIndex++;
     if (this.currentFallbackIndex >= this.fallbackModels.length) {
-      // All exhausted — wrap around to first, pause before retrying
-      this.currentFallbackIndex = 0;
-      console.log("⚠️ LLM: все fallback модели пройдены, начинаю новый круг через 5с");
-      await new Promise((r) => setTimeout(r, 5000));
+      console.log("⚠️ LLM: все fallback модели пройдены, ни одна не ответила");
+      throw new LLMUnavailableError();
     }
 
     const model = this.fallbackModels[this.currentFallbackIndex];
