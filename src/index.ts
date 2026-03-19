@@ -127,7 +127,7 @@ async function main() {
   }) : null;
 
   // Start HTTP server
-  const { server, wss } = createServer({ port });
+  const { server, wss } = createServer({ port, engine: engine ?? undefined });
 
   // Start Telegram channel
   let telegram: TelegramChannel | null = null;

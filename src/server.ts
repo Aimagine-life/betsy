@@ -13,6 +13,7 @@ import { loadConfig, saveConfig, isConfigured, type BetsyConfig } from "./core/c
 export interface ServerContext {
   mode: "setup" | "running";
   config: BetsyConfig | null;
+  engine?: any;
 }
 
 export interface ServerOptions {
@@ -159,7 +160,7 @@ function serveStatic(pathname: string, res: http.ServerResponse) {
 // ---------------------------------------------------------------------------
 
 /** Routes that do NOT require JWT */
-const PUBLIC_ROUTES = new Set(["/api/auth", "/api/setup/status"]);
+const PUBLIC_ROUTES = new Set(["/api/auth", "/api/setup/status", "/api/status"]);
 
 /** POST /api/config is public during wizard (setup mode) */
 function isPublicRoute(pathname: string, method: string, ctx: ServerContext): boolean {
@@ -271,6 +272,23 @@ function handleApi(
   if (pathname === "/api/backup/import") {
     if (req.method !== "POST") { json(res, { error: "POST only" }, 405); return; }
     json(res, { error: "Not implemented" }, 501);
+    return;
+  }
+
+  // Chat endpoints
+  if (pathname === "/api/chat") {
+    if (req.method === "GET") {
+      handleChatGet(res, ctx);
+    } else if (req.method === "POST") {
+      handleChatSend(req, res, ctx);
+    } else {
+      json(res, { error: "Method not allowed" }, 405);
+    }
+    return;
+  }
+  if (pathname === "/api/chat/clear") {
+    if (req.method !== "POST") { json(res, { error: "POST only" }, 405); return; }
+    handleChatClear(res, ctx);
     return;
   }
 
@@ -510,15 +528,22 @@ async function handleSetupApi(
 
       case "/api/setup/analyze-avatar": {
         if (req.method !== "POST") { json(res, { error: "POST only" }, 405); return; }
-        const body = parseJsonBody<{ apiKey: string; image: string }>(await readBody(req));
-        if (!body.apiKey || !body.image) {
-          json(res, { error: "apiKey and image (base64) required" }, 400);
+        const body = parseJsonBody<{ apiKey?: string; image: string }>(await readBody(req));
+        // Use provided apiKey or fall back to config (supports both flat and nested llm formats)
+        const llmCfg = ctx.config?.llm as Record<string, unknown> | undefined;
+        const analyzeKey = body.apiKey
+          || (llmCfg?.api_key as string | undefined)
+          || ((llmCfg?.fast as Record<string, unknown> | undefined)?.api_key as string | undefined)
+          || ((llmCfg?.strong as Record<string, unknown> | undefined)?.api_key as string | undefined)
+          || "";
+        if (!analyzeKey || !body.image) {
+          json(res, { error: "API ключ и изображение (base64) обязательны" }, 400);
           return;
         }
         const analyzeRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${body.apiKey}`,
+            "Authorization": `Bearer ${analyzeKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -592,6 +617,64 @@ Return ONLY valid JSON (no markdown, no backticks):
 }
 
 // ---------------------------------------------------------------------------
+// Chat API — browser chat via engine (with LLM fallback)
+// ---------------------------------------------------------------------------
+
+const BROWSER_USER_ID = "browser-owner";
+
+function handleChatGet(res: http.ServerResponse, ctx: ServerContext) {
+  if (!ctx.engine) {
+    json(res, { messages: [] });
+    return;
+  }
+  const history = ctx.engine.getHistory(BROWSER_USER_ID) as Array<{ role: string; content: string }>;
+  const messages = history.map((m: { role: string; content: string }) => ({
+    role: m.role === "user" ? "user" : "assistant",
+    content: m.content,
+    timestamp: Date.now(),
+  }));
+  json(res, { messages });
+}
+
+async function handleChatSend(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  ctx: ServerContext,
+) {
+  if (!ctx.engine) {
+    json(res, { error: "Движок не запущен. Настрой LLM в конфиге." }, 503);
+    return;
+  }
+
+  try {
+    const body = parseJsonBody<{ message: string }>(await readBody(req));
+    if (!body.message?.trim()) {
+      json(res, { error: "Empty message" }, 400);
+      return;
+    }
+
+    const result = await ctx.engine.process({
+      channelName: "browser",
+      userId: BROWSER_USER_ID,
+      text: body.message.trim(),
+      timestamp: Date.now(),
+    });
+
+    json(res, { reply: result.text, mediaUrl: result.mediaUrl });
+  } catch (err) {
+    console.error("Chat error:", err);
+    json(res, { reply: "Произошла ошибка при обработке сообщения." });
+  }
+}
+
+function handleChatClear(res: http.ServerResponse, ctx: ServerContext) {
+  if (ctx.engine) {
+    ctx.engine.clearHistory(BROWSER_USER_ID);
+  }
+  json(res, { ok: true });
+}
+
+// ---------------------------------------------------------------------------
 // Legacy API routes — placeholder for endpoints migrated from agent.ts
 // ---------------------------------------------------------------------------
 
@@ -615,6 +698,7 @@ export function createServer(options: ServerOptions = {}): ServerHandle {
   const ctx: ServerContext = {
     mode: config ? "running" : "setup",
     config,
+    engine: options.engine ?? null,
   };
 
   const handler = createRequestHandler(ctx, { ...options, port });

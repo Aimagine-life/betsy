@@ -53,6 +53,11 @@ export class Engine {
   }
 
   /** Get conversation history for a user (for scheduler context). */
+  clearHistory(userId: string): void {
+    this.histories.delete(userId);
+    this.summaries.delete(userId);
+  }
+
   getHistory(userId: string): Array<{ role: string; content: string }> {
     this.hydrateUser(userId);
     const history = this.histories.get(userId);
