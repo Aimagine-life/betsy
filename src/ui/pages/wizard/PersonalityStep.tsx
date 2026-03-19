@@ -1,62 +1,191 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { PERSONALITY_SLIDERS, DEFAULT_PERSONALITY } from "../../../core/personality.js";
+import { PersonalitySlider } from "./PersonalitySlider.js";
 
 export interface PersonalityData {
   name: string;
-  gender: "female" | "male" | "neutral";
-  tone: string;
-  responseStyle: string;
+  gender: "female" | "male";
+  sliders: Record<string, number>;
   customInstructions: string;
 }
 
 interface PersonalityStepProps {
+  apiKey: string;
   onNext: (data: PersonalityData) => void;
 }
 
-const TONES = [
-  { value: "fun", label: "Веселая", icon: "M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
-  { value: "serious", label: "Серьёзная", icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" },
-  { value: "bold", label: "Дерзкая", icon: "M13 10V3L4 14h7v7l9-11h-7z" },
-  { value: "professional", label: "Профессиональная", icon: "M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" },
-];
-
-const GENDERS = [
-  { value: "female", label: "Женский" },
-  { value: "male", label: "Мужской" },
-  { value: "neutral", label: "Нейтральный" },
-];
-
-const STYLES = [
-  { value: "concise", label: "Кратко" },
-  { value: "detailed", label: "Подробно" },
-];
-
-export function PersonalityStep({ onNext }: PersonalityStepProps) {
+export function PersonalityStep({ apiKey, onNext }: PersonalityStepProps) {
   const [name, setName] = useState("Betsy");
-  const [gender, setGender] = useState<"female" | "male" | "neutral">("female");
-  const [tone, setTone] = useState("professional");
-  const [responseStyle, setResponseStyle] = useState("concise");
+  const [gender, setGender] = useState<"female" | "male">("female");
+  const [sliders, setSliders] = useState<Record<string, number>>({ ...DEFAULT_PERSONALITY });
   const [customInstructions, setCustomInstructions] = useState("");
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function setSlider(key: string, value: number) {
+    setSliders((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function handleAvatarFile(file: File) {
+    if (file.size > 5 * 1024 * 1024) return;
+    const preview = URL.createObjectURL(file);
+    setAvatarPreview(preview);
+    setAnalyzing(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(buf).reduce((data, byte) => data + String.fromCharCode(byte), "")
+      );
+      const res = await fetch("/api/setup/analyze-avatar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey, image: base64 }),
+      });
+      if (res.ok) {
+        const data = await res.json() as {
+          sliders?: Record<string, number>;
+          name?: string;
+          gender?: "female" | "male";
+        };
+        if (data.sliders) setSliders((prev) => ({ ...prev, ...data.sliders }));
+        if (data.name) setName(data.name);
+        if (data.gender) setGender(data.gender);
+      }
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (f) void handleAvatarFile(f);
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(true);
+  }
+
+  function handleDragLeave() {
+    setDragOver(false);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f) void handleAvatarFile(f);
+  }
 
   function handleNext() {
-    onNext({ name: name.trim() || "Betsy", gender, tone, responseStyle, customInstructions: customInstructions.trim() });
+    onNext({
+      name: name.trim() || "Betsy",
+      gender,
+      sliders,
+      customInstructions: customInstructions.trim(),
+    });
   }
 
   const inputCls =
-    "w-full bg-zinc-900/80 border border-zinc-800/80 rounded-md px-4 py-3 text-[14px] text-zinc-300 focus:outline-none focus:border-emerald-500/50 transition-colors placeholder-zinc-600";
+    "w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[14px] text-slate-700 focus:outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-100 transition-all placeholder-slate-300";
+
+  const sectionHeaderCls = "text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-3";
+
+  const genderChipCls = (active: boolean) =>
+    `flex-1 py-3 rounded-xl border text-[13px] font-medium transition-all cursor-pointer ${
+      active
+        ? "border-violet-300 bg-gradient-to-br from-violet-50 to-rose-50 text-slate-700 shadow-sm"
+        : "border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:text-slate-500"
+    }`;
 
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="text-2xl font-bold text-zinc-100 mb-2">
-          Кто я? Давай разберёмся вместе.
-        </h2>
-        <p className="text-zinc-400 text-sm">
-          Настрой характер и стиль общения.
-        </p>
+        <h2 className="text-2xl font-bold text-slate-700 mb-2">Кто я? Давай разберёмся вместе.</h2>
+        <p className="text-slate-400 text-sm">Настрой характер и стиль общения.</p>
       </div>
 
+      {/* Avatar drop zone */}
+      <div className="flex flex-col items-center gap-3">
+        <div className="relative">
+          {/* Pulsing glow */}
+          {!avatarPreview && (
+            <div className="absolute -inset-3 rounded-[34px] bg-gradient-to-r from-rose-300 via-violet-300 to-sky-300 opacity-30 animate-pulse blur-md pointer-events-none" />
+          )}
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => fileRef.current?.click()}
+            onKeyDown={(e) => e.key === "Enter" && fileRef.current?.click()}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`relative w-[200px] h-[200px] rounded-[28px] overflow-hidden border-2 border-dashed transition-all cursor-pointer flex flex-col items-center justify-center gap-2 select-none ${
+              dragOver
+                ? "border-violet-400 bg-violet-50 scale-[1.02]"
+                : avatarPreview
+                ? "border-violet-300 shadow-md"
+                : "border-violet-300 bg-gradient-to-br from-rose-50 via-violet-50 to-sky-50 hover:border-violet-400 shadow-lg shadow-violet-100/50"
+            }`}
+          >
+            {avatarPreview ? (
+              <img src={avatarPreview} alt="Аватар" className="w-full h-full object-cover" />
+            ) : (
+              <>
+                <svg
+                  className="w-10 h-10 text-violet-300"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z"
+                  />
+                </svg>
+                <span className="text-[13px] font-medium text-violet-400">Загрузить аватар</span>
+                <span className="text-[11px] text-slate-400">или перетащи сюда</span>
+              </>
+            )}
+            {/* Spinner overlay during analysis */}
+            {analyzing && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/70 rounded-[28px]">
+                <div className="w-7 h-7 border-2 border-slate-200 border-t-violet-400 rounded-full animate-spin" />
+                <span className="text-[12px] text-violet-500 font-medium">Анализирую...</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Tooltip */}
+        <div className="bg-gradient-to-r from-violet-50 to-rose-50 border border-violet-200/60 rounded-xl px-4 py-2.5 text-center max-w-[280px]">
+          <p className="text-[12px] text-slate-500 leading-relaxed">
+            Аватар — основа личности агента. Загрузи фото, и AI автоматически подберёт характер, стиль и тональность.
+          </p>
+        </div>
+
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          title="Выбрать аватар"
+          onChange={handleFileChange}
+        />
+      </div>
+
+      {/* Name */}
       <div className="space-y-2">
-        <label className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider block">
+        <label className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider block">
           Имя агента
         </label>
         <input
@@ -68,76 +197,46 @@ export function PersonalityStep({ onNext }: PersonalityStepProps) {
         />
       </div>
 
+      {/* Gender */}
       <div className="space-y-2">
-        <label className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider block">
+        <label className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider block">
           Пол
         </label>
-        <div className="grid grid-cols-3 gap-2">
-          {GENDERS.map((g) => (
+        <div className="flex gap-2">
+          {(["female", "male"] as const).map((g) => (
             <button
-              key={g.value}
-              onClick={() => setGender(g.value as typeof gender)}
-              className={`px-4 py-3 rounded-lg border text-[13px] font-medium transition-all ${
-                gender === g.value
-                  ? "border-emerald-500/40 bg-emerald-500/10 text-zinc-200"
-                  : "border-zinc-800/80 bg-zinc-900/40 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300"
-              }`}
+              key={g}
+              type="button"
+              onClick={() => setGender(g)}
+              className={genderChipCls(gender === g)}
             >
-              {g.label}
+              {g === "female" ? "Женский" : "Мужской"}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="space-y-2">
-        <label className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider block">
-          Тональность
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          {TONES.map((t) => (
-            <button
-              key={t.value}
-              onClick={() => setTone(t.value)}
-              className={`flex items-center gap-2.5 px-4 py-3 rounded-lg border transition-all ${
-                tone === t.value
-                  ? "border-emerald-500/40 bg-emerald-500/10 text-zinc-200"
-                  : "border-zinc-800/80 bg-zinc-900/40 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300"
-              }`}
-            >
-              <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d={t.icon} />
-              </svg>
-              <span className="text-[13px] font-medium">{t.label}</span>
-            </button>
+      {/* Personality sliders grouped by section */}
+      {PERSONALITY_SLIDERS.map((group) => (
+        <div key={group.group}>
+          <div className={sectionHeaderCls}>{group.group}</div>
+          {group.sliders.map((slider) => (
+            <PersonalitySlider
+              key={slider.key}
+              label={slider.label}
+              options={[...slider.options]}
+              value={sliders[slider.key] ?? 2}
+              onChange={(v) => setSlider(slider.key, v)}
+            />
           ))}
         </div>
-      </div>
+      ))}
 
+      {/* Custom instructions */}
       <div className="space-y-2">
-        <label className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider block">
-          Стиль ответов
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          {STYLES.map((s) => (
-            <button
-              key={s.value}
-              onClick={() => setResponseStyle(s.value)}
-              className={`px-4 py-3 rounded-lg border text-[13px] font-medium transition-all ${
-                responseStyle === s.value
-                  ? "border-emerald-500/40 bg-emerald-500/10 text-zinc-200"
-                  : "border-zinc-800/80 bg-zinc-900/40 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <label className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider block">
+        <label className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider block">
           Дополнительные инструкции
-          <span className="text-zinc-600 font-normal lowercase tracking-normal ml-1">(необязательно)</span>
+          <span className="text-slate-300 font-normal lowercase tracking-normal ml-1">(необязательно)</span>
         </label>
         <textarea
           value={customInstructions}
@@ -149,8 +248,9 @@ export function PersonalityStep({ onNext }: PersonalityStepProps) {
       </div>
 
       <button
+        type="button"
         onClick={handleNext}
-        className="w-full py-3 rounded-lg text-sm font-semibold transition-colors text-white bg-emerald-600 hover:bg-emerald-500"
+        className="w-full py-3 rounded-xl text-sm font-semibold transition-all text-white bg-gradient-to-r from-rose-400 to-violet-400 hover:from-rose-500 hover:to-violet-500 shadow-sm"
       >
         Далее
       </button>

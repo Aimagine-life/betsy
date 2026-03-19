@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation, useRoute } from "wouter";
 import { ApiKeyStep } from "./wizard/ApiKeyStep.js";
 import { PasswordStep } from "./wizard/PasswordStep.js";
 import { PersonalityStep, type PersonalityData } from "./wizard/PersonalityStep.js";
@@ -11,25 +12,31 @@ interface WizardProps {
 
 interface WizardData {
   apiKey: string;
+  falApiKey: string;
   password: string;
   personality: PersonalityData | null;
   channels: ChannelsData | null;
 }
 
 const STEPS = [
-  { label: "API ключ" },
-  { label: "Пароль" },
-  { label: "Личность" },
-  { label: "Каналы" },
-  { label: "Готово" },
+  { slug: "api-key", label: "API ключ" },
+  { slug: "password", label: "Пароль" },
+  { slug: "personality", label: "Личность" },
+  { slug: "channels", label: "Каналы" },
+  { slug: "done", label: "Готово" },
 ];
 
 export function Wizard({ onComplete }: WizardProps) {
-  const [step, setStep] = useState(0);
+  const [, setLocation] = useLocation();
+  const [, params] = useRoute("/setup/:step");
+  const currentSlug = params?.step ?? "api-key";
+  const stepIndex = Math.max(0, STEPS.findIndex((s) => s.slug === currentSlug));
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState<WizardData>({
     apiKey: "",
+    falApiKey: "",
     password: "",
     personality: null,
     channels: null,
@@ -44,6 +51,7 @@ export function Wizard({ onComplete }: WizardProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           apiKey: finalData.apiKey,
+          falApiKey: finalData.falApiKey,
           password: finalData.password,
           personality: finalData.personality,
           channels: finalData.channels,
@@ -60,54 +68,56 @@ export function Wizard({ onComplete }: WizardProps) {
     }
   }
 
-  function handleApiKey(apiKey: string) {
-    setData((prev) => ({ ...prev, apiKey }));
-    setStep(1);
+  function handleApiKey(apiKey: string, falApiKey: string) {
+    setData((prev) => ({ ...prev, apiKey, falApiKey }));
+    setLocation("/setup/password");
   }
 
   function handlePassword(password: string) {
     setData((prev) => ({ ...prev, password }));
-    setStep(2);
+    setLocation("/setup/personality");
   }
 
   function handlePersonality(personality: PersonalityData) {
     setData((prev) => ({ ...prev, personality }));
-    setStep(3);
+    setLocation("/setup/channels");
   }
 
   function handleChannels(channels: ChannelsData) {
     const updated = { ...data, channels };
     setData(updated);
     void saveWizard(updated);
-    setStep(4);
+    setLocation("/setup/done");
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#09090b]">
+    <div className="wizard-bg min-h-screen flex flex-col">
       {/* Header */}
-      <header className="border-b border-zinc-800/60 px-5 py-3 bg-zinc-950/95">
+      <header className="border-b border-rose-100/60 px-5 py-3 bg-white/60 backdrop-blur-sm">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/20 flex items-center justify-center">
-            <span className="text-emerald-400 font-bold text-sm">B</span>
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-200 to-violet-200 flex items-center justify-center shadow-sm">
+            <span className="text-rose-500 font-bold text-sm">B</span>
           </div>
           <div>
-            <h1 className="text-sm font-bold text-zinc-100 leading-none">Betsy</h1>
-            <p className="text-[10px] text-zinc-600 leading-none mt-0.5">Настройка</p>
+            <h1 className="text-sm font-bold text-slate-700 leading-none">Betsy</h1>
+            <p className="text-[10px] text-slate-400 leading-none mt-0.5">Настройка</p>
           </div>
         </div>
       </header>
 
       <main className="flex-1 flex flex-col items-center px-6 py-10">
         {/* Progress bar */}
-        <div className="flex items-center gap-1 mb-10 w-full max-w-md">
+        <div className="flex items-center gap-1.5 mb-10 w-full max-w-md">
           {STEPS.map((s, i) => (
-            <div key={s.label} className="flex items-center gap-1 flex-1">
+            <div key={s.slug} className="flex items-center gap-1 flex-1">
               <div className="flex flex-col items-center flex-1">
-                <div className={`w-full h-1 rounded-full transition-colors ${
-                  i <= step ? "bg-emerald-500" : "bg-zinc-800"
+                <div className={`w-full h-1.5 rounded-full transition-all duration-500 ${
+                  i <= stepIndex
+                    ? "bg-gradient-to-r from-rose-300 via-violet-300 to-sky-300"
+                    : "bg-slate-200/60"
                 }`} />
-                <span className={`text-[9px] font-medium mt-1.5 ${
-                  i <= step ? "text-zinc-400" : "text-zinc-700"
+                <span className={`text-[9px] font-semibold mt-1.5 transition-colors ${
+                  i <= stepIndex ? "text-slate-500" : "text-slate-300"
                 }`}>
                   {s.label}
                 </span>
@@ -117,24 +127,25 @@ export function Wizard({ onComplete }: WizardProps) {
         </div>
 
         {error && (
-          <div className="w-full max-w-md mb-4 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-sm text-red-400">
+          <div className="w-full max-w-md mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-500">
             {error}
           </div>
         )}
 
         {saving && (
-          <div className="w-full max-w-md mb-4 flex items-center justify-center gap-2 text-zinc-500 text-sm">
-            <div className="w-4 h-4 border-2 border-zinc-700 border-t-emerald-400 rounded-full animate-spin" />
+          <div className="w-full max-w-md mb-4 flex items-center justify-center gap-2 text-slate-400 text-sm">
+            <div className="w-4 h-4 border-2 border-slate-200 border-t-violet-400 rounded-full animate-spin" />
             Сохраняю настройки...
           </div>
         )}
 
-        <div className="w-full max-w-md">
-          {step === 0 && <ApiKeyStep onNext={handleApiKey} />}
-          {step === 1 && <PasswordStep onNext={handlePassword} />}
-          {step === 2 && <PersonalityStep onNext={handlePersonality} />}
-          {step === 3 && <ChannelsStep onNext={handleChannels} />}
-          {step === 4 && data.channels && (
+        {/* Active step with animated glow border */}
+        <div className="w-full max-w-md wizard-glow p-6">
+          {currentSlug === "api-key" && <ApiKeyStep onNext={handleApiKey} />}
+          {currentSlug === "password" && <PasswordStep onNext={handlePassword} />}
+          {currentSlug === "personality" && <PersonalityStep apiKey={data.apiKey} onNext={handlePersonality} />}
+          {currentSlug === "channels" && <ChannelsStep onNext={handleChannels} />}
+          {currentSlug === "done" && data.channels && (
             <DoneStep channels={data.channels} onComplete={onComplete} />
           )}
         </div>
