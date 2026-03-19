@@ -9,15 +9,15 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #09090b;
-  color: #a1a1aa;
+  background: linear-gradient(135deg, #fdf2f8 0%, #faf5ff 30%, #eff6ff 60%, #ecfdf5 100%);
+  color: #334155;
 }
 
-/* Scrollbar */
+/* Scrollbar — light */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #27272a; border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
 /* Metric readout style */
 .readout {
@@ -25,19 +25,82 @@ body {
   letter-spacing: -0.02em;
 }
 
-/* Card base */
+/* Card base — light */
 .card {
-  background: rgba(24, 24, 27, 0.5);
-  border: 1px solid rgba(39, 39, 42, 0.8);
-  border-radius: 8px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
 
 /* Sharper inputs */
 input, select, textarea {
   border-radius: 6px !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 /* Selection color */
 ::selection {
-  background: rgba(239, 68, 68, 0.2);
+  background: rgba(167, 139, 250, 0.2);
+}
+
+/* Smooth transitions for interactive elements */
+button {
+  transition: color 0.2s ease, background-color 0.2s ease, opacity 0.2s ease;
+}
+
+/* Toast animation */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.toast-enter {
+  animation: toast-in 0.25s ease-out;
+}
+
+/* ── Wizard: animated gradient border ── */
+@keyframes gradient-spin {
+  0%   { --gradient-angle: 0deg; }
+  100% { --gradient-angle: 360deg; }
+}
+
+@property --gradient-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.wizard-glow {
+  position: relative;
+  border-radius: 16px;
+  background: white;
+}
+
+.wizard-glow::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 18px;
+  padding: 2px;
+  background: conic-gradient(
+    from var(--gradient-angle),
+    #fda4af, #c4b5fd, #93c5fd, #86efac, #fde68a, #fda4af
+  );
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  animation: gradient-spin 4s linear infinite;
+  z-index: -1;
+}
+
+/* Wizard light card */
+.wizard-card {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+/* Wizard bg */
+.wizard-bg {
+  background: linear-gradient(135deg, #fdf2f8 0%, #faf5ff 30%, #eff6ff 60%, #ecfdf5 100%);
 }

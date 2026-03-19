@@ -71,13 +71,13 @@ export function Skills() {
   }
 
   const inputCls =
-    "w-full bg-zinc-900/80 border border-zinc-800/80 rounded-md px-3 py-2.5 text-[13px] text-zinc-300 focus:outline-none focus:border-emerald-500/50 transition-colors placeholder-zinc-600";
+    "w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-[13px] text-slate-700 focus:outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-100 transition-colors placeholder-slate-300";
 
   if (loading) {
     return (
       <div className="text-center py-32">
-        <div className="w-5 h-5 border-2 border-zinc-700 border-t-zinc-400 rounded-full animate-spin mx-auto mb-3" />
-        <p className="text-sm text-zinc-600">Загрузка...</p>
+        <div className="w-5 h-5 border-2 border-slate-200 border-t-slate-400 rounded-full animate-spin mx-auto mb-3" />
+        <p className="text-sm text-slate-400">Загрузка...</p>
       </div>
     );
   }
@@ -86,22 +86,22 @@ export function Skills() {
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-zinc-100 tracking-tight mb-1.5">Скиллы</h1>
-          <p className="text-sm text-zinc-500">
+          <h1 className="text-3xl font-bold text-slate-700 tracking-tight mb-1.5">Скиллы</h1>
+          <p className="text-sm text-slate-400">
             Управляй навыками агента
           </p>
         </div>
         <button
           onClick={() => setShowCreate(!showCreate)}
-          className="px-4 py-2 rounded-md text-[13px] font-semibold transition-colors text-white bg-emerald-600 hover:bg-emerald-500"
+          className="px-4 py-2 rounded-xl text-[13px] font-semibold transition-colors text-white bg-gradient-to-r from-rose-400 to-violet-400 hover:from-rose-500 hover:to-violet-500"
         >
           {showCreate ? "Отмена" : "Создать скилл"}
         </button>
       </div>
 
       {showCreate && (
-        <div className="card p-5 space-y-4">
-          <h3 className="text-sm font-bold text-zinc-200 uppercase tracking-wider">Новый скилл</h3>
+        <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider">Новый скилл</h3>
 
           {error && (
             <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-sm text-red-400">
@@ -111,7 +111,7 @@ export function Skills() {
 
           <div className="space-y-3">
             <div>
-              <label className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider block mb-1.5">
+              <label className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider block mb-1.5">
                 Название
               </label>
               <input
@@ -123,7 +123,7 @@ export function Skills() {
               />
             </div>
             <div>
-              <label className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider block mb-1.5">
+              <label className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider block mb-1.5">
                 Описание
               </label>
               <textarea
@@ -135,7 +135,7 @@ export function Skills() {
               />
             </div>
             <div>
-              <label className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider block mb-1.5">
+              <label className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider block mb-1.5">
                 Триггер
               </label>
               <input
@@ -151,7 +151,7 @@ export function Skills() {
           <button
             onClick={() => void createSkill()}
             disabled={creating}
-            className="px-5 py-2.5 rounded-md text-[13px] font-semibold transition-colors disabled:opacity-30 text-white bg-emerald-600 hover:bg-emerald-500"
+            className="px-5 py-2.5 rounded-xl text-[13px] font-semibold transition-colors disabled:opacity-30 text-white bg-gradient-to-r from-rose-400 to-violet-400 hover:from-rose-500 hover:to-violet-500"
           >
             {creating ? "Создаю..." : "Создать"}
           </button>
@@ -159,32 +159,32 @@ export function Skills() {
       )}
 
       {skills.length === 0 ? (
-        <div className="card text-center py-24">
-          <p className="text-zinc-400 text-base mb-1.5">Нет скиллов</p>
-          <p className="text-zinc-600 text-sm">
+        <div className="bg-white border border-slate-200 rounded-xl text-center py-24">
+          <p className="text-slate-500 text-base mb-1.5">Нет скиллов</p>
+          <p className="text-slate-400 text-sm">
             Создай первый скилл для своего агента
           </p>
         </div>
       ) : (
-        <div className="card overflow-hidden">
-          <div className="divide-y divide-zinc-800/40">
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+          <div className="divide-y divide-slate-200">
             {skills.map((skill) => (
-              <div key={skill.id} className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800/25 transition-colors">
+              <div key={skill.id} className="flex items-center justify-between px-5 py-4 hover:bg-slate-50 transition-colors">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2.5 mb-1">
-                    <span className={`w-2 h-2 rounded-full ${skill.enabled ? "bg-emerald-400" : "bg-zinc-600"}`} />
-                    <h3 className="text-[14px] font-semibold text-zinc-200">{skill.name}</h3>
-                    <code className="text-[11px] text-zinc-600 bg-zinc-800/60 px-2 py-0.5 rounded font-mono">
+                    <span className={`w-2 h-2 rounded-full ${skill.enabled ? "bg-emerald-400" : "bg-slate-300"}`} />
+                    <h3 className="text-[14px] font-semibold text-slate-700">{skill.name}</h3>
+                    <code className="text-[11px] text-violet-600 bg-violet-50 border border-violet-200 px-2 py-0.5 rounded font-mono">
                       {skill.trigger}
                     </code>
                   </div>
                   {skill.description && (
-                    <p className="text-[12px] text-zinc-500 pl-[18px]">{skill.description}</p>
+                    <p className="text-[12px] text-slate-400 pl-[18px]">{skill.description}</p>
                   )}
                 </div>
                 <button
                   onClick={() => void deleteSkill(skill.id)}
-                  className="text-[11px] text-zinc-600 hover:text-red-400 transition-colors font-medium ml-4 shrink-0"
+                  className="text-[11px] text-slate-400 hover:text-red-400 transition-colors font-medium ml-4 shrink-0"
                 >
                   Удалить
                 </button>

@@ -112,12 +112,12 @@ export function BrowserChat() {
     <div className="flex flex-col h-[calc(100vh-4rem)]">
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h1 className="text-3xl font-bold text-zinc-100 tracking-tight mb-1.5">Чат</h1>
-          <p className="text-sm text-zinc-500">
+          <h1 className="text-3xl font-bold text-slate-700 tracking-tight mb-1.5">Чат</h1>
+          <p className="text-sm text-slate-400">
             Общайся с агентом напрямую
             {wsConnected && (
-              <span className="inline-flex items-center gap-1 ml-2 text-emerald-400 text-[11px]">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span className="inline-flex items-center gap-1 ml-2 text-emerald-500 text-[11px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 WebSocket
               </span>
             )}
@@ -126,7 +126,7 @@ export function BrowserChat() {
         {messages.length > 0 && (
           <button
             onClick={() => void handleClear()}
-            className="text-[12px] text-zinc-600 hover:text-zinc-400 transition-colors font-medium"
+            className="text-[12px] text-slate-400 hover:text-slate-600 transition-colors font-medium"
           >
             Очистить историю
           </button>
@@ -137,14 +137,14 @@ export function BrowserChat() {
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center max-w-md">
-              <p className="text-zinc-300 text-base font-semibold mb-1">Начни разговор</p>
-              <p className="text-zinc-600 text-sm mb-5">Спроси агента о чём угодно</p>
+              <p className="text-slate-700 text-base font-semibold mb-1">Начни разговор</p>
+              <p className="text-slate-400 text-sm mb-5">Спроси агента о чём угодно</p>
               <div className="grid grid-cols-2 gap-2">
                 {SUGGESTIONS.map((s) => (
                   <button
                     key={s}
                     onClick={() => void send(s)}
-                    className="text-left px-3.5 py-2.5 rounded-md border border-zinc-800/80 bg-zinc-900/60 text-[13px] text-zinc-500 hover:text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800/40 transition-colors"
+                    className="text-left px-3.5 py-2.5 rounded-md border border-slate-200 bg-white text-[13px] text-slate-500 hover:text-violet-500 hover:border-violet-300 transition-colors"
                   >
                     {s}
                   </button>
@@ -161,8 +161,8 @@ export function BrowserChat() {
               >
                 <div className={`max-w-[75%] rounded-lg px-4 py-3 ${
                   msg.role === "user"
-                    ? "bg-zinc-800 text-zinc-200"
-                    : "bg-zinc-900/80 border border-zinc-800/60"
+                    ? "bg-gradient-to-r from-rose-100 to-violet-100 text-slate-700"
+                    : "bg-slate-50 border border-slate-200 text-slate-600"
                 }`}>
                   {msg.mediaUrl && (
                     <img
@@ -173,15 +173,15 @@ export function BrowserChat() {
                     />
                   )}
                   <div><MarkdownContent text={msg.content} /></div>
-                  <p className="text-[10px] mt-2 text-zinc-700 tabular-nums font-mono">{formatTime(msg.timestamp)}</p>
+                  <p className="text-[10px] mt-2 text-slate-400 tabular-nums font-mono">{formatTime(msg.timestamp)}</p>
                 </div>
               </div>
             ))}
 
             {sending && (
               <div className="flex justify-start">
-                <div className="bg-zinc-900/80 border border-zinc-800/60 rounded-lg px-4 py-3">
-                  <span className="text-[13px] text-zinc-500">Думаю...</span>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+                  <span className="text-[13px] text-slate-400">Думаю...</span>
                 </div>
               </div>
             )}
@@ -200,12 +200,12 @@ export function BrowserChat() {
           placeholder="Напиши сообщение..."
           disabled={sending}
           rows={1}
-          className="flex-1 bg-zinc-900/80 border border-zinc-800/80 rounded-lg px-4 py-3 text-[13px] text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-emerald-500/50 transition-colors disabled:opacity-40 resize-none leading-relaxed"
+          className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[13px] text-slate-700 placeholder-slate-300 focus:outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-100 transition-colors disabled:opacity-40 resize-none leading-relaxed"
         />
         <button
           onClick={() => void send()}
           disabled={sending || !input.trim()}
-          className="px-5 py-3 rounded-md text-[13px] font-semibold transition-colors disabled:opacity-20 text-white bg-emerald-600 hover:bg-emerald-500 shrink-0"
+          className="px-5 py-3 rounded-xl text-[13px] font-semibold transition-colors disabled:opacity-20 text-white bg-gradient-to-r from-rose-400 to-violet-400 hover:from-rose-500 hover:to-violet-500 shrink-0"
         >
           Отправить
         </button>

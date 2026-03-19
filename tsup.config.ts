@@ -6,7 +6,7 @@ export default defineConfig({
   target: "node20",
   outDir: "dist",
   external: ["playwright"],
-  clean: true,
+  clean: false,
   splitting: false,
   sourcemap: true,
   dts: false,

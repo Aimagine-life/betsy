@@ -71,8 +71,8 @@ export function Status() {
   if (error && !status) {
     return (
       <div className="text-center py-32">
-        <p className="text-xl text-zinc-300 mb-2">Ошибка подключения</p>
-        <p className="text-sm text-zinc-600">{error}</p>
+        <p className="text-xl text-slate-700 mb-2">Ошибка подключения</p>
+        <p className="text-sm text-slate-400">{error}</p>
       </div>
     );
   }
@@ -80,8 +80,8 @@ export function Status() {
   if (!status) {
     return (
       <div className="text-center py-32">
-        <div className="w-5 h-5 border-2 border-zinc-700 border-t-zinc-400 rounded-full animate-spin mx-auto mb-3" />
-        <p className="text-sm text-zinc-600">Загрузка...</p>
+        <div className="w-5 h-5 border-2 border-slate-200 border-t-slate-400 rounded-full animate-spin mx-auto mb-3" />
+        <p className="text-sm text-slate-400">Загрузка...</p>
       </div>
     );
   }
@@ -96,27 +96,27 @@ export function Status() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-zinc-100 tracking-tight mb-1.5">Статус</h1>
-        <p className="text-sm text-zinc-500">
+        <h1 className="text-3xl font-bold text-slate-700 tracking-tight mb-1.5">Статус</h1>
+        <p className="text-sm text-slate-400">
           Состояние каналов, инструментов и расходов
         </p>
       </div>
 
       {/* Channels */}
       <div>
-        <h2 className="text-sm font-bold text-zinc-200 uppercase tracking-wider mb-3">Каналы</h2>
+        <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">Каналы</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {displayChannels.map((ch) => (
-            <div key={ch.type} className="card p-4">
+            <div key={ch.type} className="bg-white border border-slate-200 rounded-xl p-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[14px] font-semibold text-zinc-200">{ch.name}</span>
-                <span className={`w-2.5 h-2.5 rounded-full ${ch.connected ? "bg-emerald-400" : "bg-red-400"}`} />
+                <span className="text-[14px] font-semibold text-slate-700">{ch.name}</span>
+                <span className={`w-2.5 h-2.5 rounded-full ${ch.connected ? "bg-emerald-400" : "bg-slate-300"}`} />
               </div>
-              <p className="text-[12px] text-zinc-500">
+              <p className="text-[12px] text-slate-400">
                 {ch.connected ? "Подключён" : "Отключён"}
               </p>
               {ch.details && (
-                <p className="text-[11px] text-zinc-600 mt-1">{ch.details}</p>
+                <p className="text-[11px] text-slate-300 mt-1">{ch.details}</p>
               )}
             </div>
           ))}
@@ -127,31 +127,31 @@ export function Status() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {/* Memory */}
         <div>
-          <h2 className="text-sm font-bold text-zinc-200 uppercase tracking-wider mb-3">Память</h2>
-          <div className="card p-4">
+          <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">Память</h2>
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
             <div className="flex items-center justify-between">
-              <span className="text-[13px] text-zinc-400">Записей в памяти</span>
-              <span className="text-xl font-bold text-zinc-200 font-mono readout">{memoryCount}</span>
+              <span className="text-[13px] text-slate-400">Записей в памяти</span>
+              <span className="text-xl font-bold text-slate-700 font-mono readout">{memoryCount}</span>
             </div>
           </div>
         </div>
 
         {/* Costs */}
         <div>
-          <h2 className="text-sm font-bold text-zinc-200 uppercase tracking-wider mb-3">Расходы</h2>
-          <div className="card p-4 space-y-3">
+          <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">Расходы</h2>
+          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-[13px] text-zinc-400">Сегодня</span>
-              <span className="text-lg font-bold text-zinc-200 font-mono readout">${costs.today.toFixed(2)}</span>
+              <span className="text-[13px] text-slate-400">Сегодня</span>
+              <span className="text-lg font-bold text-slate-700 font-mono readout">${(costs.today ?? 0).toFixed(2)}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-[13px] text-zinc-400">За месяц</span>
-              <span className="text-lg font-bold text-zinc-200 font-mono readout">${costs.month.toFixed(2)}</span>
+              <span className="text-[13px] text-slate-400">За месяц</span>
+              <span className="text-lg font-bold text-slate-700 font-mono readout">${(costs.month ?? 0).toFixed(2)}</span>
             </div>
             {costs.totalTokens > 0 && (
-              <div className="flex items-center justify-between pt-2 border-t border-zinc-800/40">
-                <span className="text-[12px] text-zinc-500">Всего токенов</span>
-                <span className="text-[13px] text-zinc-400 font-mono">{costs.totalTokens.toLocaleString()}</span>
+              <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+                <span className="text-[12px] text-slate-400">Всего токенов</span>
+                <span className="text-[13px] text-slate-500 font-mono">{costs.totalTokens.toLocaleString()}</span>
               </div>
             )}
           </div>
@@ -161,16 +161,16 @@ export function Status() {
       {/* Tools */}
       {tools.length > 0 && (
         <div>
-          <h2 className="text-sm font-bold text-zinc-200 uppercase tracking-wider mb-3">Инструменты</h2>
-          <div className="card overflow-hidden">
-            <div className="divide-y divide-zinc-800/40">
+          <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">Инструменты</h2>
+          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+            <div className="divide-y divide-slate-200">
               {tools.map((tool) => (
                 <div key={tool.name} className="flex items-center justify-between px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <span className={`w-2 h-2 rounded-full ${tool.enabled ? "bg-emerald-400" : "bg-zinc-600"}`} />
-                    <span className="text-[13px] text-zinc-300">{tool.name}</span>
+                    <span className={`w-2 h-2 rounded-full ${tool.enabled ? "bg-emerald-400" : "bg-slate-300"}`} />
+                    <span className="text-[13px] text-slate-700">{tool.name}</span>
                   </div>
-                  <span className="text-[12px] text-zinc-500 font-mono">
+                  <span className="text-[12px] text-slate-400 font-mono">
                     {tool.calls} вызовов
                   </span>
                 </div>

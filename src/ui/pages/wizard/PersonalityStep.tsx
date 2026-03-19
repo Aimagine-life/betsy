@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { PERSONALITY_SLIDERS, DEFAULT_PERSONALITY } from "../../../core/personality.js";
 import { PersonalitySlider } from "./PersonalitySlider.js";
 
@@ -22,7 +22,6 @@ export function PersonalityStep({ apiKey, onNext }: PersonalityStepProps) {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   function setSlider(key: string, value: number) {
     setSliders((prev) => ({ ...prev, [key]: value }));
@@ -45,13 +44,20 @@ export function PersonalityStep({ apiKey, onNext }: PersonalityStepProps) {
       });
       if (res.ok) {
         const data = await res.json() as {
-          sliders?: Record<string, number>;
-          name?: string;
-          gender?: "female" | "male";
+          ok?: boolean;
+          analysis?: Record<string, unknown>;
         };
-        if (data.sliders) setSliders((prev) => ({ ...prev, ...data.sliders }));
-        if (data.name) setName(data.name);
-        if (data.gender) setGender(data.gender);
+        const a = data.analysis;
+        if (a) {
+          const sliderKeys = ["formality","emotionality","humor","confidence","response_length","structure","emoji","examples","friendliness","initiative","curiosity","empathy","criticism"];
+          const newSliders: Record<string, number> = {};
+          for (const k of sliderKeys) {
+            if (typeof a[k] === "number") newSliders[k] = Math.min(4, Math.max(0, a[k] as number));
+          }
+          if (Object.keys(newSliders).length > 0) setSliders((prev) => ({ ...prev, ...newSliders }));
+          if (typeof a.name === "string") setName(a.name);
+          if (a.gender === "female" || a.gender === "male") setGender(a.gender);
+        }
       }
     } finally {
       setAnalyzing(false);
@@ -114,11 +120,18 @@ export function PersonalityStep({ apiKey, onNext }: PersonalityStepProps) {
           {!avatarPreview && (
             <div className="absolute -inset-3 rounded-[34px] bg-gradient-to-r from-rose-300 via-violet-300 to-sky-300 opacity-30 animate-pulse blur-md pointer-events-none" />
           )}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => fileRef.current?.click()}
-            onKeyDown={(e) => e.key === "Enter" && fileRef.current?.click()}
+          <button
+            type="button"
+            onClick={() => {
+              const input = document.createElement("input");
+              input.type = "file";
+              input.accept = "image/*";
+              input.onchange = () => {
+                const f = input.files?.[0];
+                if (f) void handleAvatarFile(f);
+              };
+              input.click();
+            }}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
@@ -163,7 +176,7 @@ export function PersonalityStep({ apiKey, onNext }: PersonalityStepProps) {
                 <span className="text-[12px] text-violet-500 font-medium">Анализирую...</span>
               </div>
             )}
-          </div>
+          </button>
         </div>
 
         {/* Tooltip */}
@@ -172,15 +185,6 @@ export function PersonalityStep({ apiKey, onNext }: PersonalityStepProps) {
             Аватар — основа личности агента. Загрузи фото, и AI автоматически подберёт характер, стиль и тональность.
           </p>
         </div>
-
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          title="Выбрать аватар"
-          onChange={handleFileChange}
-        />
       </div>
 
       {/* Name */}
@@ -216,9 +220,9 @@ export function PersonalityStep({ apiKey, onNext }: PersonalityStepProps) {
         </div>
       </div>
 
-      {/* Personality sliders grouped by section */}
+      {/* Personality sliders — each group separated */}
       {PERSONALITY_SLIDERS.map((group) => (
-        <div key={group.group}>
+        <div key={group.group} className="bg-white/60 border border-slate-200/60 rounded-xl p-4">
           <div className={sectionHeaderCls}>{group.group}</div>
           {group.sliders.map((slider) => (
             <PersonalitySlider

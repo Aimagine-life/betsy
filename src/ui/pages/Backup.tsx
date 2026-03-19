@@ -62,14 +62,14 @@ export function Backup() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-zinc-100 tracking-tight mb-1.5">Бэкап</h1>
-        <p className="text-sm text-zinc-500">
+        <h1 className="text-3xl font-bold text-slate-700 tracking-tight mb-1.5">Бэкап</h1>
+        <p className="text-sm text-slate-400">
           Экспорт и импорт настроек агента
         </p>
       </div>
 
       {message && (
-        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3 text-sm text-emerald-400">
+        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3 text-sm text-emerald-600">
           {message}
         </div>
       )}
@@ -82,37 +82,37 @@ export function Backup() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {/* Export */}
-        <div className="card p-6 space-y-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
           <div>
-            <h2 className="text-lg font-bold text-zinc-200 mb-1">Экспорт</h2>
-            <p className="text-[13px] text-zinc-500 leading-relaxed">
+            <h2 className="text-lg font-bold text-slate-700 mb-1">Экспорт</h2>
+            <p className="text-[13px] text-slate-400 leading-relaxed">
               Скачать архив с настройками, памятью и историей чатов.
             </p>
           </div>
 
-          <div className="bg-zinc-900/60 border border-zinc-800/60 rounded-lg p-4 space-y-2">
-            <p className="text-[12px] text-zinc-400 font-medium">Что входит в бэкап:</p>
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-2">
+            <p className="text-[12px] text-slate-500 font-medium">Что входит в бэкап:</p>
             <ul className="space-y-1">
-              <li className="flex items-center gap-2 text-[12px] text-zinc-500">
-                <svg className="w-3.5 h-3.5 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <li className="flex items-center gap-2 text-[12px] text-slate-400">
+                <svg className="w-3.5 h-3.5 text-emerald-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
                 Конфигурация агента
               </li>
-              <li className="flex items-center gap-2 text-[12px] text-zinc-500">
-                <svg className="w-3.5 h-3.5 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <li className="flex items-center gap-2 text-[12px] text-slate-400">
+                <svg className="w-3.5 h-3.5 text-emerald-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
                 Память и знания
               </li>
-              <li className="flex items-center gap-2 text-[12px] text-zinc-500">
-                <svg className="w-3.5 h-3.5 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <li className="flex items-center gap-2 text-[12px] text-slate-400">
+                <svg className="w-3.5 h-3.5 text-emerald-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
                 История чатов
               </li>
-              <li className="flex items-center gap-2 text-[12px] text-zinc-500">
-                <svg className="w-3.5 h-3.5 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <li className="flex items-center gap-2 text-[12px] text-slate-400">
+                <svg className="w-3.5 h-3.5 text-emerald-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
                 Настройки скиллов
@@ -123,7 +123,7 @@ export function Backup() {
           <button
             onClick={() => void handleExport()}
             disabled={exporting}
-            className="w-full py-3 rounded-lg text-sm font-semibold transition-colors disabled:opacity-30 text-white bg-emerald-600 hover:bg-emerald-500 flex items-center justify-center gap-2"
+            className="w-full py-3 rounded-xl text-sm font-semibold transition-colors disabled:opacity-30 text-white bg-gradient-to-r from-rose-400 to-violet-400 hover:from-rose-500 hover:to-violet-500 flex items-center justify-center gap-2"
           >
             {exporting ? (
               <>
@@ -142,16 +142,16 @@ export function Backup() {
         </div>
 
         {/* Import */}
-        <div className="card p-6 space-y-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
           <div>
-            <h2 className="text-lg font-bold text-zinc-200 mb-1">Импорт</h2>
-            <p className="text-[13px] text-zinc-500 leading-relaxed">
+            <h2 className="text-lg font-bold text-slate-700 mb-1">Импорт</h2>
+            <p className="text-[13px] text-slate-400 leading-relaxed">
               Восстановить настройки из ранее сохранённого архива.
             </p>
           </div>
 
-          <div className="bg-zinc-900/60 border border-zinc-800/60 rounded-lg p-4">
-            <p className="text-[12px] text-amber-400/80 leading-relaxed">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <p className="text-[12px] text-amber-600 leading-relaxed">
               Внимание: импорт перезапишет текущие настройки. Рекомендуем сначала сделать экспорт.
             </p>
           </div>
@@ -161,17 +161,17 @@ export function Backup() {
               ref={fileRef}
               type="file"
               accept=".zip"
-              className="w-full bg-zinc-900/80 border border-zinc-800/80 rounded-md px-3 py-2.5 text-[13px] text-zinc-400 file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-zinc-800 file:text-zinc-300 hover:file:bg-zinc-700 file:transition-colors file:cursor-pointer"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-[13px] text-slate-500 file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-slate-100 file:text-slate-600 hover:file:bg-slate-200 file:transition-colors file:cursor-pointer"
             />
 
             <button
               onClick={() => void handleImport()}
               disabled={importing}
-              className="w-full py-3 rounded-lg text-sm font-semibold transition-colors disabled:opacity-30 text-zinc-300 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700/50 flex items-center justify-center gap-2"
+              className="w-full py-3 rounded-xl text-sm font-semibold transition-colors disabled:opacity-30 text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 flex items-center justify-center gap-2"
             >
               {importing ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-zinc-500/30 border-t-zinc-300 rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-500 rounded-full animate-spin" />
                   Импортирую...
                 </>
               ) : (

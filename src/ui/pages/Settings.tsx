@@ -341,24 +341,21 @@ function PersonalityTab({
         </div>
       </div>
 
-      {/* Personality sliders */}
-      <div className={sectionCls}>
-        <div className={labelCls}>Характер и стиль</div>
-        {PERSONALITY_SLIDERS.map((group) => (
-          <div key={group.group}>
-            <div className={sectionHeaderCls}>{group.group}</div>
-            {group.sliders.map((slider) => (
-              <PersonalitySlider
-                key={slider.key}
-                label={slider.label}
-                options={[...slider.options]}
-                value={sliders[slider.key] ?? 2}
-                onChange={(v) => handleSliderChange(slider.key, v)}
-              />
-            ))}
-          </div>
-        ))}
-      </div>
+      {/* Personality sliders — each group in its own card */}
+      {PERSONALITY_SLIDERS.map((group) => (
+        <div key={group.group} className={sectionCls}>
+          <div className={labelCls}>{group.group}</div>
+          {group.sliders.map((slider) => (
+            <PersonalitySlider
+              key={slider.key}
+              label={slider.label}
+              options={[...slider.options]}
+              value={sliders[slider.key] ?? 2}
+              onChange={(v) => handleSliderChange(slider.key, v)}
+            />
+          ))}
+        </div>
+      ))}
 
       {/* Custom instructions */}
       <div className={sectionCls}>
@@ -1100,7 +1097,7 @@ export function Settings() {
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium transition-all z-50 ${
+        <div className={`fixed top-6 right-6 toast-enter px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium transition-all z-50 ${
           toast.type === "success" ? "bg-emerald-50 text-emerald-600 border border-emerald-200" :
           toast.type === "error" ? "bg-red-50 text-red-500 border border-red-200" :
           "bg-slate-50 text-slate-500 border border-slate-200"

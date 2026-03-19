@@ -125,10 +125,13 @@ const MIME_TYPES: Record<string, string> = {
 
 function serveStatic(pathname: string, res: http.ServerResponse) {
   const baseDir = import.meta.dirname ?? __dirname;
-  const distUi = path.join(baseDir, "..", "dist", "ui");
+  // Try dist/ui from project root (works both from src/ in dev and dist/ in prod)
+  const projectRoot = path.join(baseDir, "..");
+  const distUi = path.join(projectRoot, "dist", "ui");
+  const srcUi = path.join(projectRoot, "src", "ui");
   const uiDir = fs.existsSync(path.join(distUi, "index.html"))
     ? distUi
-    : path.join(baseDir, "ui");
+    : srcUi;
 
   const resolvedUiDir = path.resolve(uiDir);
   let filePath = path.resolve(uiDir, pathname === "/" ? "index.html" : pathname.slice(1));
@@ -151,7 +154,14 @@ function serveStatic(pathname: string, res: http.ServerResponse) {
   }
 
   const ext = path.extname(filePath);
-  res.writeHead(200, { "Content-Type": MIME_TYPES[ext] ?? "text/plain" });
+  // Hashed assets are immutable; index.html must always be revalidated
+  const cacheControl = filePath.includes("/assets/")
+    ? "public, max-age=31536000, immutable"
+    : "no-cache";
+  res.writeHead(200, {
+    "Content-Type": MIME_TYPES[ext] ?? "text/plain",
+    "Cache-Control": cacheControl,
+  });
   fs.createReadStream(filePath).pipe(res);
 }
 
