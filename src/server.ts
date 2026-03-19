@@ -1,6 +1,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import crypto from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { loadConfig, saveConfig, isConfigured, type BetsyConfig } from "./core/config.js";
@@ -347,7 +348,7 @@ function handleStatus(res: http.ServerResponse, ctx: ServerContext) {
 
 function handleConfigGet(res: http.ServerResponse, ctx: ServerContext) {
   if (!ctx.config) {
-    json(res, { configured: false });
+    json(res, { configured: false }, 404);
     return;
   }
 
@@ -410,18 +411,23 @@ async function handleSetupApi(
       case "/api/setup/wizard": {
         if (req.method !== "POST") { json(res, { error: "POST only" }, 405); return; }
         const wizardBody = parseJsonBody<Record<string, unknown>>(await readBody(req));
-        const personality = wizardBody.personality as Record<string, string> | null;
+        const personalityData = wizardBody.personality as Record<string, unknown> | null;
         const channels = wizardBody.channels as Record<string, unknown> | null;
+
+        const sliderKeys = ["formality","emotionality","humor","confidence","response_length","structure","emoji","examples","friendliness","initiative","curiosity","empathy","criticism"];
+        const personalityConfig: Record<string, unknown> = {};
+        if (personalityData) {
+          for (const k of sliderKeys) {
+            if (typeof personalityData[k] === "number") personalityConfig[k] = personalityData[k];
+          }
+          if (personalityData.customInstructions) personalityConfig.custom_instructions = personalityData.customInstructions;
+        }
 
         const newConfig: Record<string, unknown> = {
           agent: {
-            name: personality?.name || "Betsy",
-            gender: personality?.gender || "female",
-            personality: {
-              tone: personality?.tone,
-              style: personality?.responseStyle,
-              custom_instructions: personality?.customInstructions,
-            },
+            name: (personalityData?.name as string) || "Betsy",
+            gender: (personalityData?.gender as string) || "female",
+            personality: personalityConfig,
           },
           llm: {
             provider: "openrouter",
@@ -437,10 +443,134 @@ async function handleSetupApi(
           (newConfig as Record<string, unknown>).security = { password_hash: hash };
         }
 
+        if (wizardBody.falApiKey && typeof wizardBody.falApiKey === "string") {
+          (newConfig as Record<string, unknown>).selfies = { fal_api_key: wizardBody.falApiKey };
+        }
+
+        const ownerData = wizardBody.owner as Record<string, unknown> | null;
+        if (ownerData) {
+          (newConfig as Record<string, unknown>).owner = {
+            name: ownerData.name as string,
+            address_as: ownerData.addressAs as string,
+            facts: (ownerData.facts as string[]) ?? [],
+          };
+        }
+
         saveConfig(newConfig as BetsyConfig);
         ctx.config = loadConfig();
         ctx.mode = "running";
         json(res, { ok: true, mode: "running" });
+        break;
+      }
+
+      case "/api/setup/validate-key": {
+        if (req.method !== "POST") { json(res, { error: "POST only" }, 405); return; }
+        const keyBody = parseJsonBody<Record<string, unknown>>(await readBody(req));
+        const apiKey = keyBody.apiKey as string;
+        if (!apiKey || typeof apiKey !== "string") {
+          json(res, { error: "API ключ не указан" }, 400);
+          return;
+        }
+        const keyRes = await fetch("https://openrouter.ai/api/v1/auth/key", {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        if (!keyRes.ok) {
+          json(res, { valid: false, error: "Неверный API ключ" });
+          return;
+        }
+        const keyData = await keyRes.json() as { data?: { label?: string; limit?: number; usage?: number; limit_remaining?: number } };
+        const balance = keyData.data?.limit_remaining ?? keyData.data?.limit ?? null;
+        json(res, { valid: true, balance });
+        break;
+      }
+
+      case "/api/setup/avatar": {
+        if (req.method === "GET") {
+          const avatarPath = path.join(os.homedir(), ".betsy", "avatar.png");
+          if (fs.existsSync(avatarPath)) {
+            res.writeHead(200, { "Content-Type": "image/png" });
+            fs.createReadStream(avatarPath).pipe(res);
+          } else {
+            json(res, { error: "No avatar" }, 404);
+          }
+          return;
+        }
+        if (req.method !== "POST") { json(res, { error: "POST only" }, 405); return; }
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(chunk as Buffer);
+        const body = Buffer.concat(chunks);
+        if (body.length === 0) { json(res, { error: "Пустой файл" }, 400); return; }
+        if (body.length > 5 * 1024 * 1024) { json(res, { error: "Файл слишком большой (макс 5 МБ)" }, 400); return; }
+        const betsyDir = path.join(os.homedir(), ".betsy");
+        if (!fs.existsSync(betsyDir)) fs.mkdirSync(betsyDir, { recursive: true });
+        fs.writeFileSync(path.join(betsyDir, "avatar.png"), body);
+        json(res, { ok: true });
+        break;
+      }
+
+      case "/api/setup/analyze-avatar": {
+        if (req.method !== "POST") { json(res, { error: "POST only" }, 405); return; }
+        const body = parseJsonBody<{ apiKey: string; image: string }>(await readBody(req));
+        if (!body.apiKey || !body.image) {
+          json(res, { error: "apiKey and image (base64) required" }, 400);
+          return;
+        }
+        const analyzeRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${body.apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash",
+            messages: [{
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: `Analyze this avatar image and suggest personality traits for an AI assistant that would match this character visually.
+
+Return ONLY valid JSON (no markdown, no backticks):
+{
+  "name": "suggested name in Russian or English",
+  "gender": "female" or "male",
+  "formality": 0-4 (0=casual, 4=formal),
+  "emotionality": 0-4 (0=reserved, 4=expressive),
+  "humor": 0-4 (0=serious, 4=comedian),
+  "confidence": 0-4 (0=cautious, 4=assertive),
+  "response_length": 0-4 (0=telegraphic, 4=verbose),
+  "structure": 0-4 (0=plain text, 4=headers+lists),
+  "emoji": 0-4 (0=never, 4=maximum),
+  "examples": 0-4 (0=never, 4=always),
+  "friendliness": 0-4 (0=cold, 4=warm),
+  "initiative": 0-4 (0=reactive, 4=proactive),
+  "curiosity": 0-4 (0=never asks, 4=always asks),
+  "empathy": 0-4 (0=neutral, 4=deeply caring),
+  "criticism": 0-4 (0=agreeable, 4=argumentative),
+  "description": "brief character description in Russian, 1-2 sentences"
+}`
+                },
+                {
+                  type: "image_url",
+                  image_url: { url: `data:image/png;base64,${body.image}` },
+                },
+              ],
+            }],
+          }),
+        });
+        if (!analyzeRes.ok) {
+          json(res, { error: "Ошибка анализа аватара" }, 500);
+          return;
+        }
+        const result = await analyzeRes.json() as { choices?: { message?: { content?: string } }[] };
+        const content = result.choices?.[0]?.message?.content ?? "";
+        try {
+          const jsonMatch = content.match(/\{[\s\S]*\}/);
+          const parsed = JSON.parse(jsonMatch?.[0] ?? content);
+          json(res, { ok: true, analysis: parsed });
+        } catch {
+          json(res, { error: "Не удалось разобрать ответ AI", raw: content }, 500);
+        }
         break;
       }
 
