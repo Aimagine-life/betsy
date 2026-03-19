@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useLocation, useRoute } from "wouter";
 import { PERSONALITY_SLIDERS, DEFAULT_PERSONALITY } from "../../core/personality.js";
 import { PersonalitySlider } from "./wizard/PersonalitySlider.js";
 
@@ -40,6 +41,8 @@ interface Config {
     };
   };
 }
+
+type Toast = { text: string; type: "success" | "error" | "saving" };
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -126,32 +129,6 @@ function MaskedField({
   );
 }
 
-function SaveBar({
-  saving,
-  saved,
-  error,
-  onSave,
-}: {
-  saving: boolean;
-  saved: boolean;
-  error: string;
-  onSave: () => void;
-}) {
-  return (
-    <div className="flex items-center gap-4 pt-2">
-      <button type="button" onClick={onSave} disabled={saving} className={saveBtnCls}>
-        {saving ? "Сохраняю..." : "Сохранить"}
-      </button>
-      {saved && !saving && (
-        <span className="text-[12px] text-emerald-500 font-medium">Сохранено</span>
-      )}
-      {error && !saving && (
-        <span className="text-[12px] text-rose-500 font-medium">{error}</span>
-      )}
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Tabs
 // ---------------------------------------------------------------------------
@@ -170,7 +147,13 @@ const TABS: { id: TabId; label: string }[] = [
 // Tab: Личность
 // ---------------------------------------------------------------------------
 
-function PersonalityTab({ config, onSaved }: { config: Config; onSaved: (patch: Partial<Config>) => void }) {
+function PersonalityTab({
+  config,
+  onSave,
+}: {
+  config: Config;
+  onSave: (patch: Partial<Config>) => void;
+}) {
   const [name, setName] = useState(config.agent?.name ?? "Betsy");
   const [gender, setGender] = useState<"female" | "male">(config.agent?.gender ?? "female");
   const [sliders, setSliders] = useState<Record<string, number>>({
@@ -181,10 +164,7 @@ function PersonalityTab({ config, onSaved }: { config: Config; onSaved: (patch: 
     config.agent?.custom_instructions ?? ""
   );
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState("");
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [analyzing, setAnalyzing] = useState(false);
 
   useEffect(() => {
     fetch("/api/setup/avatar")
@@ -194,57 +174,89 @@ function PersonalityTab({ config, onSaved }: { config: Config; onSaved: (patch: 
       .catch(() => {});
   }, []);
 
-  function setSlider(key: string, value: number) {
-    setSliders((prev) => ({ ...prev, [key]: value }));
+  function buildPatch(
+    n = name,
+    g = gender,
+    s = sliders,
+    ci = customInstructions
+  ): Partial<Config> {
+    return {
+      agent: {
+        ...config.agent,
+        name: n.trim() || "Betsy",
+        gender: g,
+        personality: s,
+        custom_instructions: ci.trim(),
+      },
+    };
+  }
+
+  function handleNameChange(v: string) {
+    setName(v);
+    onSave(buildPatch(v));
+  }
+
+  function handleGenderChange(g: "female" | "male") {
+    setGender(g);
+    onSave(buildPatch(name, g));
+  }
+
+  function handleSliderChange(key: string, value: number) {
+    const newSliders = { ...sliders, [key]: value };
+    setSliders(newSliders);
+    onSave(buildPatch(name, gender, newSliders));
+  }
+
+  function handleCustomInstructionsChange(v: string) {
+    setCustomInstructions(v);
+    onSave(buildPatch(name, gender, sliders, v));
   }
 
   async function handleAvatarFile(file: File) {
     if (file.size > 5 * 1024 * 1024) return;
     const buf = await file.arrayBuffer();
+    const base64 = btoa(
+      new Uint8Array(buf).reduce((data, byte) => data + String.fromCharCode(byte), "")
+    );
+
+    // Upload avatar file
     const token = localStorage.getItem("betsy_token");
     const headers: Record<string, string> = { "Content-Type": "application/octet-stream" };
     if (token) headers["Authorization"] = `Bearer ${token}`;
-    const res = await fetch("/api/setup/avatar", {
+    const uploadRes = await fetch("/api/setup/avatar", {
       method: "POST",
       headers,
       body: buf,
     });
-    if (res.ok) setAvatarUrl("/api/setup/avatar?" + Date.now());
-  }
+    if (uploadRes.ok) setAvatarUrl("/api/setup/avatar?" + Date.now());
 
-  async function save() {
-    setSaving(true);
-    setSaved(false);
-    setError("");
+    // AI analysis
+    setAnalyzing(true);
     try {
-      const patch: Partial<Config> = {
-        agent: {
-          ...config.agent,
-          name: name.trim() || "Betsy",
-          gender,
-          personality: sliders,
-          custom_instructions: customInstructions.trim(),
-        },
-      };
-      const token = localStorage.getItem("betsy_token");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch("/api/config", {
+      const res = await fetch("/api/setup/analyze-avatar", {
         method: "POST",
-        headers,
-        body: JSON.stringify({ ...config, ...patch }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: base64 }),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: "Ошибка" })) as { error?: string };
-        throw new Error(body.error ?? "Ошибка сохранения");
+      if (res.ok) {
+        const data = await res.json() as { ok?: boolean; analysis?: Record<string, unknown> };
+        const a = data.analysis;
+        if (a) {
+          const sliderKeys = ["formality","emotionality","humor","confidence","response_length","structure","emoji","examples","friendliness","initiative","curiosity","empathy","criticism"];
+          const newSliders: Record<string, number> = { ...sliders };
+          for (const k of sliderKeys) {
+            if (typeof a[k] === "number") newSliders[k] = Math.min(4, Math.max(0, a[k] as number));
+          }
+          const newName = typeof a.name === "string" ? a.name : name;
+          const newGender = (a.gender === "female" || a.gender === "male") ? a.gender : gender;
+          if (Object.keys(newSliders).length > 0) setSliders(newSliders);
+          if (typeof a.name === "string") setName(newName);
+          if (a.gender === "female" || a.gender === "male") setGender(newGender);
+          onSave(buildPatch(newName, newGender, newSliders, customInstructions));
+        }
       }
-      onSaved(patch);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Ошибка");
     } finally {
-      setSaving(false);
+      setAnalyzing(false);
     }
   }
 
@@ -263,12 +275,19 @@ function PersonalityTab({ config, onSaved }: { config: Config; onSaved: (patch: 
       <div className={sectionCls}>
         <div className={labelCls}>Аватар</div>
         <div className="flex items-center gap-5">
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => fileRef.current?.click()}
-            onKeyDown={(e) => e.key === "Enter" && fileRef.current?.click()}
-            className="w-[80px] h-[80px] rounded-2xl overflow-hidden border-2 border-dashed border-violet-300 bg-gradient-to-br from-rose-50 via-violet-50 to-sky-50 flex items-center justify-center cursor-pointer hover:border-violet-400 transition-all shrink-0"
+          <button
+            type="button"
+            onClick={() => {
+              const input = document.createElement("input");
+              input.type = "file";
+              input.accept = "image/*";
+              input.onchange = () => {
+                const f = input.files?.[0];
+                if (f) void handleAvatarFile(f);
+              };
+              input.click();
+            }}
+            className="relative w-[80px] h-[80px] rounded-2xl overflow-hidden border-2 border-dashed border-violet-300 bg-gradient-to-br from-rose-50 via-violet-50 to-sky-50 flex items-center justify-center cursor-pointer hover:border-violet-400 transition-all shrink-0"
           >
             {avatarUrl ? (
               <img src={avatarUrl} alt="Аватар" className="w-full h-full object-cover" />
@@ -277,22 +296,19 @@ function PersonalityTab({ config, onSaved }: { config: Config; onSaved: (patch: 
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
               </svg>
             )}
-          </div>
+            {analyzing && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-white/80 rounded-2xl">
+                <div className="w-5 h-5 border-2 border-slate-200 border-t-violet-400 rounded-full animate-spin" />
+                <span className="text-[9px] text-violet-500 font-medium">Анализ...</span>
+              </div>
+            )}
+          </button>
           <div className="text-[12px] text-slate-400 leading-relaxed">
-            Нажми на аватар, чтобы загрузить новое фото.<br />
-            Макс. размер — 5 МБ.
+            {analyzing
+              ? "AI анализирует аватар и подбирает характер..."
+              : <>Нажми на аватар, чтобы загрузить новое фото.<br />Макс. размер — 5 МБ.</>
+            }
           </div>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            title="Выбрать аватар"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void handleAvatarFile(f);
-            }}
-          />
         </div>
       </div>
 
@@ -303,7 +319,7 @@ function PersonalityTab({ config, onSaved }: { config: Config; onSaved: (patch: 
           <input
             type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => handleNameChange(e.target.value)}
             placeholder="Betsy"
             className={inputCls}
           />
@@ -315,7 +331,7 @@ function PersonalityTab({ config, onSaved }: { config: Config; onSaved: (patch: 
               <button
                 key={g}
                 type="button"
-                onClick={() => setGender(g)}
+                onClick={() => handleGenderChange(g)}
                 className={genderChipCls(gender === g)}
               >
                 {g === "female" ? "Женский" : "Мужской"}
@@ -337,7 +353,7 @@ function PersonalityTab({ config, onSaved }: { config: Config; onSaved: (patch: 
                 label={slider.label}
                 options={[...slider.options]}
                 value={sliders[slider.key] ?? 2}
-                onChange={(v) => setSlider(slider.key, v)}
+                onChange={(v) => handleSliderChange(slider.key, v)}
               />
             ))}
           </div>
@@ -353,15 +369,13 @@ function PersonalityTab({ config, onSaved }: { config: Config; onSaved: (patch: 
           </label>
           <textarea
             value={customInstructions}
-            onChange={(e) => setCustomInstructions(e.target.value)}
+            onChange={(e) => handleCustomInstructionsChange(e.target.value)}
             placeholder="Например: отвечай только на русском, используй эмодзи..."
             rows={4}
             className={`${inputCls} resize-none`}
           />
         </div>
       </div>
-
-      <SaveBar saving={saving} saved={saved} error={error} onSave={() => void save()} />
     </div>
   );
 }
@@ -370,58 +384,57 @@ function PersonalityTab({ config, onSaved }: { config: Config; onSaved: (patch: 
 // Tab: Владелец
 // ---------------------------------------------------------------------------
 
-function OwnerTab({ config, onSaved }: { config: Config; onSaved: (patch: Partial<Config>) => void }) {
+function OwnerTab({
+  config,
+  onSave,
+}: {
+  config: Config;
+  onSave: (patch: Partial<Config>) => void;
+}) {
   const [ownerName, setOwnerName] = useState(config.owner?.name ?? "");
   const [addressAs, setAddressAs] = useState(config.owner?.address_as ?? "");
   const [facts, setFacts] = useState<string[]>(config.owner?.facts ?? []);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState("");
+
+  function buildPatch(
+    n = ownerName,
+    a = addressAs,
+    f = facts
+  ): Partial<Config> {
+    return {
+      owner: {
+        name: n.trim(),
+        address_as: a.trim(),
+        facts: f.map((x) => x.trim()).filter(Boolean),
+      },
+    };
+  }
+
+  function handleNameChange(v: string) {
+    setOwnerName(v);
+    onSave(buildPatch(v));
+  }
+
+  function handleAddressAsChange(v: string) {
+    setAddressAs(v);
+    onSave(buildPatch(ownerName, v));
+  }
 
   function addFact() {
-    setFacts((prev) => [...prev, ""]);
+    const newFacts = [...facts, ""];
+    setFacts(newFacts);
+    // Don't save empty fact — will save when user types
   }
 
   function updateFact(i: number, v: string) {
-    setFacts((prev) => prev.map((f, idx) => (idx === i ? v : f)));
+    const newFacts = facts.map((f, idx) => (idx === i ? v : f));
+    setFacts(newFacts);
+    onSave(buildPatch(ownerName, addressAs, newFacts));
   }
 
   function removeFact(i: number) {
-    setFacts((prev) => prev.filter((_, idx) => idx !== i));
-  }
-
-  async function save() {
-    setSaving(true);
-    setSaved(false);
-    setError("");
-    try {
-      const patch: Partial<Config> = {
-        owner: {
-          name: ownerName.trim(),
-          address_as: addressAs.trim(),
-          facts: facts.map((f) => f.trim()).filter(Boolean),
-        },
-      };
-      const token = localStorage.getItem("betsy_token");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch("/api/config", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ ...config, ...patch }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: "Ошибка" })) as { error?: string };
-        throw new Error(body.error ?? "Ошибка сохранения");
-      }
-      onSaved(patch);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Ошибка");
-    } finally {
-      setSaving(false);
-    }
+    const newFacts = facts.filter((_, idx) => idx !== i);
+    setFacts(newFacts);
+    onSave(buildPatch(ownerName, addressAs, newFacts));
   }
 
   return (
@@ -432,7 +445,7 @@ function OwnerTab({ config, onSaved }: { config: Config; onSaved: (patch: Partia
           <input
             type="text"
             value={ownerName}
-            onChange={(e) => setOwnerName(e.target.value)}
+            onChange={(e) => handleNameChange(e.target.value)}
             placeholder="Константин"
             className={inputCls}
           />
@@ -443,7 +456,7 @@ function OwnerTab({ config, onSaved }: { config: Config; onSaved: (patch: Partia
           <input
             type="text"
             value={addressAs}
-            onChange={(e) => setAddressAs(e.target.value)}
+            onChange={(e) => handleAddressAsChange(e.target.value)}
             placeholder="Костя, boss, шеф..."
             className={inputCls}
           />
@@ -492,8 +505,6 @@ function OwnerTab({ config, onSaved }: { config: Config; onSaved: (patch: Partia
           </button>
         </div>
       </div>
-
-      <SaveBar saving={saving} saved={saved} error={error} onSave={() => void save()} />
     </div>
   );
 }
@@ -502,45 +513,67 @@ function OwnerTab({ config, onSaved }: { config: Config; onSaved: (patch: Partia
 // Tab: API ключи
 // ---------------------------------------------------------------------------
 
-function ApiKeysTab({ config, onSaved }: { config: Config; onSaved: (patch: Partial<Config>) => void }) {
+function ApiKeysTab({
+  config,
+  onSave,
+}: {
+  config: Config;
+  onSave: (patch: Partial<Config>) => void;
+}) {
   const [openrouterKey, setOpenrouterKey] = useState(config.llm?.api_key ?? "");
   const [falKey, setFalKey] = useState(config.selfies?.fal_api_key ?? "");
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState("");
+  const [validating, setValidating] = useState(false);
+  const [balance, setBalance] = useState<number | null>(null);
+  const [validated, setValidated] = useState(false);
+  const [validateError, setValidateError] = useState("");
 
-  async function save() {
-    setSaving(true);
-    setSaved(false);
-    setError("");
+  async function validateKey() {
+    const key = openrouterKey.trim();
+    if (!key || key === "***") return;
+    setValidating(true);
+    setBalance(null);
+    setValidated(false);
+    setValidateError("");
     try {
-      const patch: Partial<Config> = {};
-      if (openrouterKey && openrouterKey !== "***") {
-        patch.llm = { ...config.llm, api_key: openrouterKey };
-      }
-      if (falKey && falKey !== "***") {
-        patch.selfies = { fal_api_key: falKey };
-      }
-      const token = localStorage.getItem("betsy_token");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch("/api/config", {
+      const res = await fetch("/api/setup/validate-key", {
         method: "POST",
-        headers,
-        body: JSON.stringify({ ...config, ...patch }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: key }),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: "Ошибка" })) as { error?: string };
-        throw new Error(body.error ?? "Ошибка сохранения");
+      const data = await res.json() as { valid: boolean; error?: string; balance?: number | null };
+      if (!data.valid) {
+        setValidateError(data.error ?? "Неверный API ключ");
+        return;
       }
-      onSaved(patch);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Ошибка");
+      setBalance(data.balance ?? null);
+      setValidated(true);
+    } catch {
+      setValidateError("Не удалось проверить ключ");
     } finally {
-      setSaving(false);
+      setValidating(false);
     }
+  }
+
+  function handleOpenrouterChange(v: string) {
+    setOpenrouterKey(v);
+    setValidated(false);
+    setBalance(null);
+    if (v && v !== "***") {
+      onSave({ llm: { ...config.llm, api_key: v } });
+    }
+  }
+
+  function handleFalKeyChange(v: string) {
+    setFalKey(v);
+    if (v && v !== "***") {
+      onSave({ selfies: { fal_api_key: v } });
+    }
+  }
+
+  function formatBalance(val: number | null): string {
+    if (val === null) return "—";
+    if (val === 0) return "$0.00";
+    return `$${val.toFixed(2)}`;
   }
 
   return (
@@ -549,17 +582,43 @@ function ApiKeysTab({ config, onSaved }: { config: Config; onSaved: (patch: Part
         <MaskedField
           label="OpenRouter API ключ"
           value={openrouterKey}
-          onChange={setOpenrouterKey}
+          onChange={handleOpenrouterChange}
           placeholder="sk-or-..."
         />
+        <div className="flex items-center gap-3 -mt-2">
+          <button
+            type="button"
+            onClick={() => void validateKey()}
+            disabled={!openrouterKey.trim() || openrouterKey === "***" || validating}
+            className="px-4 py-2 rounded-xl text-[12px] font-semibold transition-all disabled:opacity-30 text-white bg-gradient-to-r from-rose-400 to-violet-400 hover:from-rose-500 hover:to-violet-500"
+          >
+            {validating ? "Проверяю..." : "Проверить ключ"}
+          </button>
+          {validated && (
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-[12px] text-emerald-600 font-medium">Валиден</span>
+              <span className="text-[12px] font-mono text-slate-500 ml-1">Баланс: {formatBalance(balance)}</span>
+            </div>
+          )}
+          {validateError && (
+            <span className="text-[12px] text-rose-500 font-medium">{validateError}</span>
+          )}
+        </div>
+      </div>
+      <div className={sectionCls}>
         <MaskedField
           label="Fal.ai API ключ"
           value={falKey}
-          onChange={setFalKey}
+          onChange={handleFalKeyChange}
           placeholder="fal-..."
         />
+        <p className="text-[11px] text-slate-400 -mt-2">
+          Визуальные способности: селфи, видео-кружочки, генерация изображений.
+        </p>
       </div>
-      <SaveBar saving={saving} saved={saved} error={error} onSave={() => void save()} />
     </div>
   );
 }
@@ -568,7 +627,13 @@ function ApiKeysTab({ config, onSaved }: { config: Config; onSaved: (patch: Part
 // Tab: Каналы
 // ---------------------------------------------------------------------------
 
-function ChannelsTab({ config, onSaved }: { config: Config; onSaved: (patch: Partial<Config>) => void }) {
+function ChannelsTab({
+  config,
+  onSave,
+}: {
+  config: Config;
+  onSave: (patch: Partial<Config>) => void;
+}) {
   const telegramCfg = config.channels?.telegram ?? config.telegram;
   const maxCfg = config.channels?.max;
 
@@ -585,49 +650,55 @@ function ChannelsTab({ config, onSaved }: { config: Config; onSaved: (patch: Par
   const [maxToken, setMaxToken] = useState(
     (maxCfg as { token?: string } | undefined)?.token ?? ""
   );
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState("");
 
-  async function save() {
-    setSaving(true);
-    setSaved(false);
-    setError("");
-    try {
-      const patch: Partial<Config> = {
-        channels: {
-          browser: true,
-          telegram: {
-            enabled: telegramEnabled,
-            token: telegramToken && telegramToken !== "***" ? telegramToken : (telegramCfg?.token ?? ""),
-            owner_id: telegramOwnerId ? Number(telegramOwnerId) : undefined,
-          },
-          max: {
-            enabled: maxEnabled,
-            token: maxToken && maxToken !== "***" ? maxToken : ((maxCfg as { token?: string } | undefined)?.token ?? ""),
-          },
+  function buildPatch(
+    tgEnabled = telegramEnabled,
+    tgToken = telegramToken,
+    tgOwnerId = telegramOwnerId,
+    mxEnabled = maxEnabled,
+    mxToken = maxToken
+  ): Partial<Config> {
+    return {
+      channels: {
+        browser: true,
+        telegram: {
+          enabled: tgEnabled,
+          token: tgToken && tgToken !== "***" ? tgToken : (telegramCfg?.token ?? ""),
+          owner_id: tgOwnerId ? Number(tgOwnerId) : undefined,
         },
-      };
-      const token = localStorage.getItem("betsy_token");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch("/api/config", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ ...config, ...patch }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: "Ошибка" })) as { error?: string };
-        throw new Error(body.error ?? "Ошибка сохранения");
-      }
-      onSaved(patch);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Ошибка");
-    } finally {
-      setSaving(false);
-    }
+        max: {
+          enabled: mxEnabled,
+          token: mxToken && mxToken !== "***" ? mxToken : ((maxCfg as { token?: string } | undefined)?.token ?? ""),
+        },
+      },
+    };
+  }
+
+  function handleTelegramToggle() {
+    const v = !telegramEnabled;
+    setTelegramEnabled(v);
+    onSave(buildPatch(v));
+  }
+
+  function handleTelegramToken(v: string) {
+    setTelegramToken(v);
+    onSave(buildPatch(telegramEnabled, v));
+  }
+
+  function handleTelegramOwnerId(v: string) {
+    setTelegramOwnerId(v);
+    onSave(buildPatch(telegramEnabled, telegramToken, v));
+  }
+
+  function handleMaxToggle() {
+    const v = !maxEnabled;
+    setMaxEnabled(v);
+    onSave(buildPatch(telegramEnabled, telegramToken, telegramOwnerId, v));
+  }
+
+  function handleMaxToken(v: string) {
+    setMaxToken(v);
+    onSave(buildPatch(telegramEnabled, telegramToken, telegramOwnerId, maxEnabled, v));
   }
 
   const inputCls2 =
@@ -669,7 +740,7 @@ function ChannelsTab({ config, onSaved }: { config: Config; onSaved: (patch: Par
               <p className="text-[11px] text-slate-400">Бот в Telegram</p>
             </div>
           </div>
-          <Toggle on={telegramEnabled} onToggle={() => setTelegramEnabled(!telegramEnabled)} label="Telegram toggle" />
+          <Toggle on={telegramEnabled} onToggle={handleTelegramToggle} label="Telegram toggle" />
         </div>
 
         {telegramEnabled && (
@@ -677,14 +748,14 @@ function ChannelsTab({ config, onSaved }: { config: Config; onSaved: (patch: Par
             <input
               type="password"
               value={telegramToken === "***" ? "" : telegramToken}
-              onChange={(e) => setTelegramToken(e.target.value)}
+              onChange={(e) => handleTelegramToken(e.target.value)}
               placeholder={telegramToken === "***" ? "Токен сохранён (введите новый для смены)" : "Токен от @BotFather"}
               className={inputCls2}
             />
             <input
               type="text"
               value={telegramOwnerId}
-              onChange={(e) => setTelegramOwnerId(e.target.value)}
+              onChange={(e) => handleTelegramOwnerId(e.target.value)}
               placeholder="Telegram ID владельца"
               className={inputCls2}
             />
@@ -708,7 +779,7 @@ function ChannelsTab({ config, onSaved }: { config: Config; onSaved: (patch: Par
               <p className="text-[11px] text-slate-400">Мессенджер Max</p>
             </div>
           </div>
-          <Toggle on={maxEnabled} onToggle={() => setMaxEnabled(!maxEnabled)} label="Max toggle" />
+          <Toggle on={maxEnabled} onToggle={handleMaxToggle} label="Max toggle" />
         </div>
 
         {maxEnabled && (
@@ -716,15 +787,13 @@ function ChannelsTab({ config, onSaved }: { config: Config; onSaved: (patch: Par
             <input
               type="password"
               value={maxToken === "***" ? "" : maxToken}
-              onChange={(e) => setMaxToken(e.target.value)}
+              onChange={(e) => handleMaxToken(e.target.value)}
               placeholder={maxToken === "***" ? "Токен сохранён (введите новый для смены)" : "Токен бота Max"}
               className={inputCls2}
             />
           </div>
         )}
       </div>
-
-      <SaveBar saving={saving} saved={saved} error={error} onSave={() => void save()} />
     </div>
   );
 }
@@ -740,7 +809,13 @@ const PERMISSIONS = [
   { key: "npm_install" as const, label: "npm install", description: "Установка npm пакетов" },
 ];
 
-function SecurityTab({ config, onSaved }: { config: Config; onSaved: (patch: Partial<Config>) => void }) {
+function SecurityTab({
+  config,
+  onSave,
+}: {
+  config: Config;
+  onSave: (patch: Partial<Config>) => void;
+}) {
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -753,12 +828,11 @@ function SecurityTab({ config, onSaved }: { config: Config; onSaved: (patch: Par
   const [savingPwd, setSavingPwd] = useState(false);
   const [savedPwd, setSavedPwd] = useState(false);
   const [errorPwd, setErrorPwd] = useState("");
-  const [savingPerms, setSavingPerms] = useState(false);
-  const [savedPerms, setSavedPerms] = useState(false);
-  const [errorPerms, setErrorPerms] = useState("");
 
   function toggleTool(key: keyof typeof tools) {
-    setTools((prev) => ({ ...prev, [key]: !prev[key] }));
+    const newTools = { ...tools, [key]: !tools[key] };
+    setTools(newTools);
+    onSave({ security: { ...config.security, tools: newTools } });
   }
 
   async function savePassword() {
@@ -814,7 +888,7 @@ function SecurityTab({ config, onSaved }: { config: Config; onSaved: (patch: Par
         const body = await res.json().catch(() => ({ error: "Ошибка" })) as { error?: string };
         throw new Error(body.error ?? "Ошибка сохранения");
       }
-      onSaved(patch);
+      onSave(patch);
       setSavedPwd(true);
       setTimeout(() => setSavedPwd(false), 3000);
       setOldPassword("");
@@ -824,36 +898,6 @@ function SecurityTab({ config, onSaved }: { config: Config; onSaved: (patch: Par
       setErrorPwd(err instanceof Error ? err.message : "Ошибка");
     } finally {
       setSavingPwd(false);
-    }
-  }
-
-  async function savePermissions() {
-    setSavingPerms(true);
-    setSavedPerms(false);
-    setErrorPerms("");
-    try {
-      const patch: Partial<Config> = {
-        security: { ...config.security, tools },
-      };
-      const token = localStorage.getItem("betsy_token");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch("/api/config", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ ...config, ...patch }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: "Ошибка" })) as { error?: string };
-        throw new Error(body.error ?? "Ошибка сохранения");
-      }
-      onSaved(patch);
-      setSavedPerms(true);
-      setTimeout(() => setSavedPerms(false), 3000);
-    } catch (err) {
-      setErrorPerms(err instanceof Error ? err.message : "Ошибка");
-    } finally {
-      setSavingPerms(false);
     }
   }
 
@@ -894,7 +938,22 @@ function SecurityTab({ config, onSaved }: { config: Config; onSaved: (patch: Par
             className={inputCls}
           />
         </div>
-        <SaveBar saving={savingPwd} saved={savedPwd} error={errorPwd} onSave={() => void savePassword()} />
+        <div className="flex items-center gap-4 pt-2">
+          <button
+            type="button"
+            onClick={() => void savePassword()}
+            disabled={savingPwd}
+            className={saveBtnCls}
+          >
+            {savingPwd ? "Сохраняю..." : "Сменить пароль"}
+          </button>
+          {savedPwd && !savingPwd && (
+            <span className="text-[12px] text-emerald-500 font-medium">Пароль изменён</span>
+          )}
+          {errorPwd && !savingPwd && (
+            <span className="text-[12px] text-rose-500 font-medium">{errorPwd}</span>
+          )}
+        </div>
       </div>
 
       {/* Permissions */}
@@ -918,7 +977,6 @@ function SecurityTab({ config, onSaved }: { config: Config; onSaved: (patch: Par
             </div>
           ))}
         </div>
-        <SaveBar saving={savingPerms} saved={savedPerms} error={errorPerms} onSave={() => void savePermissions()} />
       </div>
     </div>
   );
@@ -929,10 +987,17 @@ function SecurityTab({ config, onSaved }: { config: Config; onSaved: (patch: Par
 // ---------------------------------------------------------------------------
 
 export function Settings() {
-  const [activeTab, setActiveTab] = useState<TabId>("personality");
+  const [, setLocation] = useLocation();
+  const [, params] = useRoute("/settings/:tab");
+  const tabFromUrl = params?.tab as TabId | undefined;
+  const activeTab: TabId = tabFromUrl && TABS.some(t => t.id === tabFromUrl) ? tabFromUrl : "personality";
+  const setActiveTab = (tab: TabId) => setLocation(`/settings/${tab}`);
   const [config, setConfig] = useState<Config | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [toast, setToast] = useState<Toast | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     const token = localStorage.getItem("betsy_token");
@@ -948,8 +1013,31 @@ export function Settings() {
       .finally(() => setLoading(false));
   }, []);
 
-  function handleSaved(patch: Partial<Config>) {
-    setConfig((prev) => (prev ? { ...prev, ...patch } : prev));
+  async function saveConfig(patch: Partial<Config>) {
+    setToast({ text: "Сохраняю...", type: "saving" });
+    clearTimeout(toastTimerRef.current);
+    try {
+      const token = localStorage.getItem("betsy_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/config", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ ...config, ...patch }),
+      });
+      if (!res.ok) throw new Error("Ошибка");
+      setConfig((prev) => prev ? { ...prev, ...patch } : prev);
+      setToast({ text: "Сохранено", type: "success" });
+      toastTimerRef.current = setTimeout(() => setToast(null), 2000);
+    } catch {
+      setToast({ text: "Ошибка сохранения", type: "error" });
+      toastTimerRef.current = setTimeout(() => setToast(null), 4000);
+    }
+  }
+
+  function debouncedSave(patch: Partial<Config>) {
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => void saveConfig(patch), 500);
   }
 
   if (loading) {
@@ -995,19 +1083,30 @@ export function Settings() {
 
       {/* Tab content */}
       {activeTab === "personality" && (
-        <PersonalityTab config={config} onSaved={handleSaved} />
+        <PersonalityTab config={config} onSave={debouncedSave} />
       )}
       {activeTab === "owner" && (
-        <OwnerTab config={config} onSaved={handleSaved} />
+        <OwnerTab config={config} onSave={debouncedSave} />
       )}
       {activeTab === "apikeys" && (
-        <ApiKeysTab config={config} onSaved={handleSaved} />
+        <ApiKeysTab config={config} onSave={debouncedSave} />
       )}
       {activeTab === "channels" && (
-        <ChannelsTab config={config} onSaved={handleSaved} />
+        <ChannelsTab config={config} onSave={debouncedSave} />
       )}
       {activeTab === "security" && (
-        <SecurityTab config={config} onSaved={handleSaved} />
+        <SecurityTab config={config} onSave={debouncedSave} />
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium transition-all z-50 ${
+          toast.type === "success" ? "bg-emerald-50 text-emerald-600 border border-emerald-200" :
+          toast.type === "error" ? "bg-red-50 text-red-500 border border-red-200" :
+          "bg-slate-50 text-slate-500 border border-slate-200"
+        }`}>
+          {toast.text}
+        </div>
       )}
     </div>
   );
