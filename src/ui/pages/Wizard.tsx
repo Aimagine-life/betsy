@@ -150,6 +150,12 @@ export function Wizard({ onComplete }: WizardProps) {
           )}
         </div>
       </main>
+
+      <footer className="text-center py-4 text-[10px] text-slate-300">
+        <a href="https://github.com/pinkocto" target="_blank" rel="noopener noreferrer" className="hover:text-violet-400 transition-colors">
+          by pinkocto
+        </a>
+      </footer>
     </div>
   );
 }

@@ -114,7 +114,17 @@ export function App() {
           </div>
 
           <div className="flex items-center justify-between pt-1 border-t border-zinc-800/40">
-            <span className="text-[10px] text-zinc-700 font-mono">v0.1.0</span>
+            <div className="flex flex-col items-start gap-1">
+              <span className="text-[10px] text-zinc-700 font-mono">v0.1.0</span>
+              <a
+                href="https://github.com/pinkocto"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
+              >
+                pinkocto
+              </a>
+            </div>
             <SystemClock />
           </div>
         </div>
