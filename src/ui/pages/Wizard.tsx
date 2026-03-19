@@ -3,6 +3,7 @@ import { useLocation, useRoute } from "wouter";
 import { ApiKeyStep } from "./wizard/ApiKeyStep.js";
 import { PasswordStep } from "./wizard/PasswordStep.js";
 import { PersonalityStep, type PersonalityData } from "./wizard/PersonalityStep.js";
+import { OwnerStep, type OwnerData } from "./wizard/OwnerStep.js";
 import { ChannelsStep, type ChannelsData } from "./wizard/ChannelsStep.js";
 import { DoneStep } from "./wizard/DoneStep.js";
 
@@ -15,6 +16,7 @@ interface WizardData {
   falApiKey: string;
   password: string;
   personality: PersonalityData | null;
+  owner: OwnerData | null;
   channels: ChannelsData | null;
 }
 
@@ -22,6 +24,7 @@ const STEPS = [
   { slug: "api-key", label: "API ключ" },
   { slug: "password", label: "Пароль" },
   { slug: "personality", label: "Личность" },
+  { slug: "owner", label: "Владелец" },
   { slug: "channels", label: "Каналы" },
   { slug: "done", label: "Готово" },
 ];
@@ -39,6 +42,7 @@ export function Wizard({ onComplete }: WizardProps) {
     falApiKey: "",
     password: "",
     personality: null,
+    owner: null,
     channels: null,
   });
 
@@ -54,6 +58,7 @@ export function Wizard({ onComplete }: WizardProps) {
           falApiKey: finalData.falApiKey,
           password: finalData.password,
           personality: finalData.personality,
+          owner: finalData.owner,
           channels: finalData.channels,
         }),
       });
@@ -80,6 +85,11 @@ export function Wizard({ onComplete }: WizardProps) {
 
   function handlePersonality(personality: PersonalityData) {
     setData((prev) => ({ ...prev, personality }));
+    setLocation("/setup/owner");
+  }
+
+  function handleOwner(owner: OwnerData) {
+    setData((prev) => ({ ...prev, owner }));
     setLocation("/setup/channels");
   }
 
@@ -144,6 +154,7 @@ export function Wizard({ onComplete }: WizardProps) {
           {currentSlug === "api-key" && <ApiKeyStep onNext={handleApiKey} />}
           {currentSlug === "password" && <PasswordStep onNext={handlePassword} />}
           {currentSlug === "personality" && <PersonalityStep apiKey={data.apiKey} onNext={handlePersonality} />}
+          {currentSlug === "owner" && <OwnerStep onNext={handleOwner} />}
           {currentSlug === "channels" && <ChannelsStep onNext={handleChannels} />}
           {currentSlug === "done" && data.channels && (
             <DoneStep channels={data.channels} onComplete={onComplete} />
