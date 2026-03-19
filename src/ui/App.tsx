@@ -4,6 +4,7 @@ import { Status } from "./pages/Status.js";
 import { Skills } from "./pages/Skills.js";
 import { Backup } from "./pages/Backup.js";
 import { Wizard } from "./pages/Wizard.js";
+import { Settings } from "./pages/Settings.js";
 import { api, type StatusData } from "./lib/api.js";
 
 type Page = "dashboard" | "chat" | "status" | "skills" | "backup" | "settings";
@@ -48,7 +49,7 @@ export function App() {
   if (configured === null) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-5 h-5 border-2 border-zinc-700 border-t-zinc-400 rounded-full animate-spin" />
+        <div className="w-5 h-5 border-2 border-slate-200 border-t-violet-400 rounded-full animate-spin" />
       </div>
     );
   }
@@ -62,16 +63,16 @@ export function App() {
   return (
     <div className="min-h-screen flex">
       {/* Sidebar */}
-      <aside className="w-[240px] shrink-0 border-r border-zinc-800/80 flex flex-col bg-[#0c0c0e] sticky top-0 h-screen">
+      <aside className="w-[240px] shrink-0 border-r border-slate-200/60 flex flex-col bg-white/80 backdrop-blur-sm sticky top-0 h-screen">
         {/* Logo */}
-        <div className="px-5 py-5 border-b border-zinc-800/60">
+        <div className="px-5 py-5 border-b border-slate-200/60">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/20 flex items-center justify-center">
-              <span className="text-emerald-400 font-bold text-sm">B</span>
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-200 to-violet-200 flex items-center justify-center">
+              <span className="text-rose-500 font-bold text-sm">B</span>
             </div>
             <div>
-              <h1 className="text-[15px] font-bold text-zinc-100 leading-none tracking-tight">Betsy</h1>
-              <p className="text-[11px] text-zinc-600 leading-none mt-1">{"\u0410\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0430\u0433\u0435\u043D\u0442"}</p>
+              <h1 className="text-[15px] font-bold text-slate-700 leading-none tracking-tight">Betsy</h1>
+              <p className="text-[11px] text-slate-400 leading-none mt-1">{"\u0410\u0432\u0442\u043E\u043D\u043E\u043C\u043D\u044B\u0439 \u0430\u0433\u0435\u043D\u0442"}</p>
             </div>
           </div>
         </div>
@@ -84,14 +85,20 @@ export function App() {
               onClick={() => setPage(n.page)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-[13px] font-medium transition-colors ${
                 page === n.page
-                  ? "bg-zinc-800/80 text-zinc-100"
-                  : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/40"
+                  ? "bg-gradient-to-r from-violet-50 to-rose-50 text-slate-700"
+                  : "text-slate-400 hover:text-slate-600 hover:bg-slate-50"
               }`}
             >
               {page === n.page && (
-                <span className="w-[3px] h-4 rounded-full bg-emerald-500 -ml-1.5 mr-0.5 shrink-0" />
+                <span className="w-[3px] h-4 rounded-full bg-violet-400 -ml-1.5 mr-0.5 shrink-0" />
               )}
-              <svg className="w-[17px] h-[17px] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <svg
+                className={`w-[17px] h-[17px] shrink-0 ${page === n.page ? "text-violet-500" : "text-slate-400"}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
                 <path strokeLinecap="round" strokeLinejoin="round" d={n.icon} />
               </svg>
               {n.label}
@@ -100,27 +107,27 @@ export function App() {
         </nav>
 
         {/* Bottom: Status */}
-        <div className="px-4 py-4 border-t border-zinc-800/60 space-y-2.5">
+        <div className="px-4 py-4 border-t border-slate-200/60 space-y-2.5">
           <div className="flex items-center gap-2.5">
-            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${isRunning ? "bg-emerald-400" : "bg-zinc-600"}`} />
-            <span className="text-[13px] text-zinc-400">
+            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${isRunning ? "bg-emerald-400" : "bg-slate-300"}`} />
+            <span className="text-[13px] text-slate-500">
               {isRunning ? "\u0420\u0430\u0431\u043E\u0442\u0430\u0435\u0442" : "\u041E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D"}
             </span>
             {status?.uptime !== undefined && isRunning && (
-              <span className="text-[11px] text-zinc-600 font-mono ml-auto readout">
+              <span className="text-[11px] text-slate-400 font-mono ml-auto readout">
                 {formatUptime(status.uptime)}
               </span>
             )}
           </div>
 
-          <div className="flex items-center justify-between pt-1 border-t border-zinc-800/40">
+          <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
             <div className="flex flex-col items-start gap-1">
-              <span className="text-[10px] text-zinc-700 font-mono">v0.1.0</span>
+              <span className="text-[10px] text-slate-400 font-mono">v0.1.0</span>
               <a
                 href="https://github.com/pinkocto"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                className="text-[10px] text-slate-400 hover:text-violet-400 transition-colors"
               >
                 pinkocto
               </a>
@@ -138,7 +145,7 @@ export function App() {
           {page === "status" && <Status />}
           {page === "skills" && <Skills />}
           {page === "backup" && <Backup />}
-          {page === "settings" && <div className="text-zinc-400">Настройки (в разработке)</div>}
+          {page === "settings" && <Settings />}
         </div>
       </main>
     </div>
@@ -154,7 +161,7 @@ function SystemClock() {
   }, []);
 
   return (
-    <span className="text-[10px] font-mono text-zinc-600 tabular-nums">
+    <span className="text-[10px] font-mono text-slate-400 tabular-nums">
       {time.toLocaleTimeString([], { hour12: false })}
     </span>
   );
