@@ -197,11 +197,17 @@ function chunkText(text: string, maxLen: number): string[] {
 async function deliver(ctx: Context, response: OutgoingMessage): Promise<void> {
   const mode = response.mode ?? "text";
 
-  // If response has a media URL (e.g. from selfie tool), send as photo
+  // If response has a media URL (e.g. from selfie/image_gen tool), send as photo
   if (response.mediaUrl) {
     try {
-      const imgRes = await fetch(response.mediaUrl);
-      const buffer = Buffer.from(await imgRes.arrayBuffer());
+      let buffer: Buffer;
+      if (response.mediaUrl.startsWith("data:")) {
+        const base64 = response.mediaUrl.replace(/^data:image\/[^;]+;base64,/, "");
+        buffer = Buffer.from(base64, "base64");
+      } else {
+        const imgRes = await fetch(response.mediaUrl);
+        buffer = Buffer.from(await imgRes.arrayBuffer());
+      }
       const { InputFile } = await import("grammy");
       const caption = response.text ? markdownToTelegramHtml(response.text) : undefined;
       await ctx.replyWithPhoto(new InputFile(buffer, "selfie.jpg"), {

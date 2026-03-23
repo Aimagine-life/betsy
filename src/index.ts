@@ -21,6 +21,9 @@ import type { Channel } from "./channels/types.js";
 import { sshTool } from "./core/tools/ssh.js";
 import { npmInstallTool } from "./core/tools/npm-install.js";
 import { SelfieTool } from "./core/tools/selfie.js";
+import { ImageGenTool } from "./core/tools/image-gen.js";
+import { SkillSearchTool } from "./core/tools/skill-search.js";
+import { SkillInstallTool } from "./core/tools/skill-install.js";
 
 function getAddress(): string {
   const nets = os.networkInterfaces();
@@ -100,6 +103,17 @@ async function main() {
     referencePhotoUrl: selfiesConfig?.reference_photo_url,
   });
   tools.register(selfieTool);
+  // Image generation tool — uses OpenRouter API key
+  const llmApiKey = getLLMApiKey(config);
+  if (llmApiKey) {
+    tools.register(new ImageGenTool({ apiKey: llmApiKey }));
+  }
+  // SkillsMP tools — search and install agent skills
+  const skillsmpKey = (config as any).skillsmp?.api_key as string | undefined;
+  if (skillsmpKey) {
+    tools.register(new SkillSearchTool({ apiKey: skillsmpKey }));
+    tools.register(new SkillInstallTool());
+  }
   // Web tool — conditional on google config
   const googleConfig = (config as any).google as { api_key: string; cx: string } | undefined;
   if (googleConfig?.api_key && googleConfig?.cx) {
