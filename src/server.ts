@@ -391,6 +391,7 @@ function handleConfigGet(res: http.ServerResponse, ctx: ServerContext) {
   if (safe.voice?.openai_key) safe.voice.openai_key = "***";
   if (safe.sync_so?.api_key) safe.sync_so.api_key = "***";
   if (safe.selfies?.fal_api_key) safe.selfies.fal_api_key = "***";
+  if (safe.skillsmp?.api_key) safe.skillsmp.api_key = "***";
 
   json(res, { configured: true, ...safe });
 }

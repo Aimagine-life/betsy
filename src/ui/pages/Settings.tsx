@@ -25,6 +25,7 @@ interface Config {
     strong?: { api_key?: string };
   };
   selfies?: { fal_api_key?: string };
+  skillsmp?: { api_key?: string };
   telegram?: { token?: string; owner_id?: number; enabled?: boolean };
   channels?: {
     browser?: boolean;
@@ -519,6 +520,7 @@ function ApiKeysTab({
 }) {
   const [openrouterKey, setOpenrouterKey] = useState(config.llm?.api_key ?? "");
   const [falKey, setFalKey] = useState(config.selfies?.fal_api_key ?? "");
+  const [skillsmpKey, setSkillsmpKey] = useState(config.skillsmp?.api_key ?? "");
   const [validating, setValidating] = useState(false);
   const [balance, setBalance] = useState<number | null>(null);
   const [validated, setValidated] = useState(false);
@@ -564,6 +566,13 @@ function ApiKeysTab({
     setFalKey(v);
     if (v && v !== "***") {
       onSave({ selfies: { fal_api_key: v } });
+    }
+  }
+
+  function handleSkillsmpKeyChange(v: string) {
+    setSkillsmpKey(v);
+    if (v && v !== "***") {
+      onSave({ skillsmp: { api_key: v } });
     }
   }
 
@@ -615,6 +624,31 @@ function ApiKeysTab({
         <p className="text-[11px] text-slate-400 -mt-2">
           Визуальные способности: селфи, видео-кружочки, генерация изображений.
         </p>
+      </div>
+      <div className={sectionCls}>
+        <MaskedField
+          label="SkillsMP API ключ"
+          value={skillsmpKey}
+          onChange={handleSkillsmpKeyChange}
+          placeholder="sk_live_skillsmp_..."
+        />
+        <div className="space-y-1.5 -mt-2">
+          <p className="text-[11px] text-slate-400">
+            Маркетплейс навыков для ИИ-ассистентов. Позволяет Betsy самостоятельно
+            находить и устанавливать новые навыки из 500 000+ открытых репозиториев.
+          </p>
+          <p className="text-[11px] text-slate-400">
+            Бесплатно, лимит 500 запросов в день.{" "}
+            <a
+              href="https://skillsmp.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-violet-400 hover:text-violet-500 underline underline-offset-2"
+            >
+              Получить ключ
+            </a>
+          </p>
+        </div>
       </div>
     </div>
   );
