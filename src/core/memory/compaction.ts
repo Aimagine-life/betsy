@@ -35,7 +35,11 @@ export async function compactHistory(userId: string, llm: LLMClient): Promise<vo
   const oldPart = allRows.slice(0, splitIdx);
   if (oldPart.length === 0) return;
 
-  const oldText = oldPart.map(m => `${m.role}: ${m.content}`).join("\n");
+  const MAX_COMPACTION_CHARS = 30_000;
+  let oldText = oldPart.map(m => `${m.role}: ${m.content}`).join("\n");
+  if (oldText.length > MAX_COMPACTION_CHARS) {
+    oldText = oldText.slice(-MAX_COMPACTION_CHARS);
+  }
 
   const promptText = `Ты — помощник, который суммаризирует разговоры.
 

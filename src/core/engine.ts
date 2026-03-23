@@ -88,6 +88,13 @@ export class Engine {
     }
     let history = this.histories.get(userId)!;
 
+    // Hard truncation: if history is still too large after compaction, keep only recent messages
+    if (history.length > MAX_HISTORY * 2) {
+      console.log(JSON.stringify({ tag: "engine:hard_truncate", userId, before: history.length, kept: MAX_HISTORY }));
+      history = history.slice(-MAX_HISTORY);
+      this.histories.set(userId, history);
+    };
+
     // Build system prompt with memory context
     let systemPrompt = this.buildPromptWithMemory(msg.text, userId);
 
