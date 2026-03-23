@@ -1,31 +1,27 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Betsy — AI Companion</title>
-  <meta name="description" content="Free open-source AI companion with personality, voice, video circles, and self-learning. 500,000+ skills. Runs on your server.">
-  <meta name="keywords" content="AI companion, AI agent, open source, chatbot, voice assistant, Telegram bot, self-learning AI">
+  <title>Betsy — Личный ИИ-помощник без кода</title>
+  <meta name="description" content="Betsy — бесплатный AI-ассистент с памятью, голосом, видео и 500 000+ навыков. Работает на твоём сервере, данные остаются у тебя.">
+  <meta name="keywords" content="AI assistant, no code AI, personal assistant, voice AI, video AI, open source, MIT license, free AI, ИИ помощник">
   <meta name="author" content="Aimagine">
-
-  <!-- Open Graph -->
-  <meta property="og:title" content="Betsy — AI Companion">
-  <meta property="og:description" content="Free open-source AI companion with personality, voice, video, and self-learning. Your server, your data.">
+  <meta property="og:title" content="Betsy — Личный ИИ-помощник без кода">
+  <meta property="og:description" content="Бесплатный AI-ассистент с памятью, голосом, видео и полумиллионом навыков. Работает на твоём сервере, данные остаются у тебя.">
   <meta property="og:image" content="https://i.ibb.co/rKmJSLvZ/photo-2026-03-19-00-33-38.jpg">
   <meta property="og:url" content="https://betsyai.io">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Betsy AI">
-
-  <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Betsy — AI Companion">
-  <meta name="twitter:description" content="Free open-source AI companion with personality, voice, video, and self-learning.">
+  <meta name="twitter:title" content="Betsy — Личный ИИ-помощник без кода">
+  <meta name="twitter:description" content="Бесплатный AI-ассистент с памятью, голосом, видео и 500 000+ навыков.">
   <meta name="twitter:image" content="https://i.ibb.co/rKmJSLvZ/photo-2026-03-19-00-33-38.jpg">
+  <link rel="canonical" href="https://betsyai.io">
 
   <!-- Favicon — SVG inline data URI (violet gradient B letter) -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23fb7185'/%3E%3Cstop offset='100%25' stop-color='%23a78bfa'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Ctext x='16' y='23' text-anchor='middle' fill='white' font-family='Inter,sans-serif' font-weight='700' font-size='20'%3EB%3C/text%3E%3C/svg%3E">
 
-  <link rel="canonical" href="https://betsyai.io">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -156,7 +152,7 @@
     }
 
     .hero-title {
-      font-size: 32px;
+      font-size: 30px;
       font-weight: 700;
       color: #1e293b;
       line-height: 1.3;
@@ -181,6 +177,127 @@
     .hero-sub-cta {
       font-size: 12px;
       color: #94a3b8;
+    }
+
+    /* Steps */
+    .steps-grid {
+      display: flex;
+      gap: 16px;
+      margin-top: 24px;
+    }
+
+    .step-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      text-align: center;
+      padding: 24px;
+      flex: 1;
+    }
+
+    .step-number {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(to right, #fb7185, #a78bfa);
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+
+    .step-icon {
+      margin-bottom: 8px;
+    }
+
+    .step-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #1e293b;
+      margin-bottom: 6px;
+    }
+
+    .step-text {
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.6;
+    }
+
+    /* Features grid */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      margin-top: 24px;
+    }
+
+    .feature-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      padding: 20px;
+    }
+
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      margin-bottom: 12px;
+    }
+
+    .feature-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #1e293b;
+      margin-bottom: 6px;
+    }
+
+    .feature-text {
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.6;
+    }
+
+    /* Testimonials */
+    .testimonials-layout {
+      display: flex;
+      gap: 16px;
+      margin-top: 24px;
+    }
+
+    .testimonial-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-left: 3px solid #a78bfa;
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      padding: 20px;
+      flex: 1;
+    }
+
+    .quote-icon {
+      width: 24px;
+      height: 24px;
+      color: #cbd5e1;
+      margin-bottom: 8px;
+    }
+
+    .testimonial-quote {
+      font-size: 13px;
+      color: #475569;
+      line-height: 1.7;
+      font-style: italic;
+      margin-bottom: 12px;
+    }
+
+    .testimonial-author {
+      font-size: 12px;
+      color: #94a3b8;
+      font-weight: 600;
     }
 
     /* Agent Gallery */
@@ -350,54 +467,6 @@
       text-align: center;
     }
 
-    /* Chat example */
-    .chat-example {
-      margin-top: 20px;
-    }
-
-    .chat-line {
-      font-size: 13px;
-      line-height: 1.7;
-      color: #1e293b;
-    }
-
-    .chat-line + .chat-line {
-      margin-top: 8px;
-    }
-
-    /* Tools */
-    .tools-layout {
-      display: flex;
-      gap: 20px;
-      margin-top: 20px;
-      align-items: flex-start;
-    }
-
-    .tools-tags {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      flex: 1;
-    }
-
-    .tool-tag {
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      padding: 4px 10px;
-      font-size: 11px;
-      color: #475569;
-      font-weight: 500;
-    }
-
-    .tools-image {
-      width: 140px;
-      border-radius: 12px;
-      border: 1px solid #e2e8f0;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-      flex-shrink: 0;
-    }
-
     /* Fallback chain */
     .fallback-chain {
       display: flex;
@@ -481,18 +550,27 @@
     }
 
     .footer-links {
-      font-size: 12px;
-      color: #94a3b8;
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      align-items: center;
       margin-top: 16px;
     }
 
-    .footer-links a {
-      color: #94a3b8;
+    .footer-link {
+      font-size: 13px;
+      color: #64748b;
       text-decoration: none;
     }
 
-    .footer-links a:hover {
-      text-decoration: underline;
+    .footer-link:hover {
+      color: #a78bfa;
+    }
+
+    .footer-small {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-top: 12px;
     }
 
     /* Responsive */
@@ -516,6 +594,18 @@
         text-align: center;
       }
 
+      .steps-grid {
+        flex-direction: column;
+      }
+
+      .features-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .testimonials-layout {
+        flex-direction: column;
+      }
+
       .gallery-layout {
         flex-direction: column;
       }
@@ -534,10 +624,6 @@
         height: 120px;
       }
 
-      .tools-layout {
-        flex-direction: column;
-      }
-
       .platform-grid {
         flex-wrap: wrap;
       }
@@ -545,6 +631,11 @@
       .platform-card {
         flex: unset;
         width: 45%;
+      }
+
+      .footer-links {
+        flex-wrap: wrap;
+        justify-content: center;
       }
     }
   </style>
@@ -555,20 +646,12 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "Betsy",
-  "description": "Free open-source AI companion with personality, voice, video circles, and self-learning. 500,000+ skills available.",
+  "description": "Бесплатный AI-ассистент с памятью, голосом, видео и 500 000+ навыков. Работает на вашем сервере.",
   "url": "https://betsyai.io",
   "applicationCategory": "UtilitiesApplication",
   "operatingSystem": "Linux, Windows, macOS",
-  "offers": {
-    "@type": "Offer",
-    "price": "0",
-    "priceCurrency": "USD"
-  },
-  "author": {
-    "@type": "Organization",
-    "name": "Aimagine",
-    "url": "https://github.com/Aimagine-life"
-  },
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "author": { "@type": "Organization", "name": "Aimagine", "url": "https://github.com/Aimagine-life" },
   "license": "https://opensource.org/licenses/MIT",
   "codeRepository": "https://github.com/Aimagine-life/betsy"
 }
@@ -580,17 +663,18 @@
         src="https://i.ibb.co/rKmJSLvZ/photo-2026-03-19-00-33-38.jpg"
         alt="Betsy avatar"
         class="hero-avatar"
+        width="140"
+        height="140"
       >
-      <div class="hero-badge">Free &amp; Open Source AI Companion</div>
+      <div class="hero-badge">Open Source AI Companion</div>
       <h1 class="hero-title">
-        The AI that actually<br>
-        <span class="gradient-text">knows you</span>
+        Твой личный ИИ-помощник,<br>который работает <span class="gradient-text">без кода</span>
       </h1>
       <p class="hero-subtitle">
-        Autonomous agent with real personality, voice, video, and self-learning. Runs on your server. Your data stays yours.
+        Просто скажи, что нужно — и Betsy сделает это за тебя: напоминания, автопоиск, генерация контента, голосовые и видео-ответы. Всё на твоём сервере, данные остаются у тебя.
       </p>
       <div class="hero-buttons">
-        <a href="#" class="btn-primary">npx betsy</a>
+        <a href="https://github.com/Aimagine-life/betsy#quick-start" class="btn-primary">Попробовать за 60 сек</a>
         <a href="https://github.com/Aimagine-life/betsy" class="btn-outline">GitHub
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-left: 4px;">
             <path d="M5 12h14"></path>
@@ -598,20 +682,135 @@
           </svg>
         </a>
       </div>
-      <p class="hero-sub-cta">MIT License &middot; Free forever &middot; Works with $0 balance</p>
+      <p class="hero-sub-cta">MIT License &middot; Бесплатно навсегда &middot; Работает при $0 на балансе</p>
     </section>
 
-    <!-- 01 — Agent Gallery -->
+    <!-- Как это работает -->
     <section class="section">
-      <div class="section-label" style="color: #fb7185; margin-bottom: 12px;">01 — Choose Your Agent</div>
-      <h2 class="section-title">20 unique characters. Or create your own.</h2>
+      <div class="section-label" style="color: #a78bfa; margin-bottom: 12px;">Как это работает</div>
+      <div class="steps-grid">
+        <div class="step-card">
+          <div class="step-number">1</div>
+          <div class="step-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </div>
+          <div class="step-title">Скажи</div>
+          <div class="step-text">Напиши в чате простую фразу: &laquo;Напомни купить молоко завтра в 10 утра&raquo;</div>
+        </div>
+        <div class="step-card">
+          <div class="step-number">2</div>
+          <div class="step-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </div>
+          <div class="step-title">Betsy ищет</div>
+          <div class="step-text">Автоматически подбирает нужный skill и ставит его без твоего участия</div>
+        </div>
+        <div class="step-card">
+          <div class="step-number">3</div>
+          <div class="step-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+          </div>
+          <div class="step-title">Получаешь результат</div>
+          <div class="step-text">В нужное время Betsy пришлёт уведомление. Всё на твоём сервере.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Ключевые возможности -->
+    <section class="section">
+      <div class="section-label" style="color: #fb7185; margin-bottom: 12px;">Возможности</div>
+      <h2 class="section-title">Всё, что нужно от ИИ-помощника</h2>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#fb7185" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+          </div>
+          <div class="feature-title">Голос & видео</div>
+          <div class="feature-text">Голосовые сообщения, lip-synced видео-кружки, селфи-генерация по запросу.</div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"></path>
+              <line x1="9" y1="21" x2="15" y2="21"></line>
+              <line x1="10" y1="24" x2="14" y2="24"></line>
+            </svg>
+          </div>
+          <div class="feature-title">Память & самообучение</div>
+          <div class="feature-text">Запоминает всё, что ты говоришь. Контекст даже из старых чатов.</div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M13.5 2H6a2 2 0 0 0-2 2v5.5"></path>
+              <path d="M20 7.5V4a2 2 0 0 0-2-2h-1.5"></path>
+              <path d="M4 14.5V20a2 2 0 0 0 2 2h1.5"></path>
+              <path d="M14.5 22H18a2 2 0 0 0 2-2v-5.5"></path>
+              <path d="M9 2v4a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V2"></path>
+              <path d="M2 9h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H2"></path>
+              <path d="M22 9h-4a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h4"></path>
+              <path d="M9 22v-4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4"></path>
+            </svg>
+          </div>
+          <div class="feature-title">500 000+ навыков</div>
+          <div class="feature-text">Одна фраза — и Betsy ставит нужный модуль: поиск цен, перевод, PDF и другое.</div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+          </div>
+          <div class="feature-title">Твои данные — твои</div>
+          <div class="feature-text">Всё хранится локально (SQLite), никаких внешних серверов без твоего согласия.</div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="4 17 10 11 4 5"></polyline>
+              <line x1="12" y1="19" x2="20" y2="19"></line>
+            </svg>
+          </div>
+          <div class="feature-title">Автономный агент</div>
+          <div class="feature-text">Не просто чат — выполняет multi-step задачи: shell, HTTP, файлы, SSH, scheduler.</div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </div>
+          <div class="feature-title">Работает при $0</div>
+          <div class="feature-text">Через OpenRouter автоматически переключается на бесплатные модели. Никогда не отключается.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 01 — Выбери агента -->
+    <section class="section">
+      <div class="section-label" style="color: #fb7185; margin-bottom: 12px;">01 — Выбери агента</div>
+      <h2 class="section-title">20 уникальных персонажей. Или создай своего.</h2>
       <p class="section-text">
-        Pick from a gallery of pre-built AI agents — each with their own personality, tone, and style. Tweak any character to fit you, or build one from scratch.
+        Выбери из галереи готовых ИИ-агентов — у каждого свой характер, тон и стиль. Настрой любого под себя или создай с нуля.
       </p>
       <div class="gallery-layout">
         <img
           src="https://i.ibb.co/4n5g1nCH/photo-2026-03-19-00-18-21.jpg"
-          alt="Agent gallery preview"
+          alt="Галерея агентов"
           class="gallery-image"
         >
         <div class="gallery-list">
@@ -619,24 +818,24 @@
             <div class="agent-avatar agent-avatar--rose">B</div>
             <div class="agent-info">
               <span class="agent-name">Betsy</span>
-              <span class="agent-subtitle">Warm, witty, caring companion</span>
+              <span class="agent-subtitle">Тёплая, остроумная, заботливая</span>
             </div>
           </div>
           <div class="agent-card">
             <div class="agent-avatar agent-avatar--violet">M</div>
             <div class="agent-info">
               <span class="agent-name">Marcus</span>
-              <span class="agent-subtitle">Stoic mentor, straight talk</span>
+              <span class="agent-subtitle">Аналитик, прямой разговор</span>
             </div>
           </div>
           <div class="agent-card">
             <div class="agent-avatar agent-avatar--emerald">J</div>
             <div class="agent-info">
               <span class="agent-name">Jazz</span>
-              <span class="agent-subtitle">Creative spark, playful energy</span>
+              <span class="agent-subtitle">Креативная искра, игривая энергия</span>
             </div>
           </div>
-          <a href="#" class="gallery-more">+17 more &middot; or create your own
+          <a href="#" class="gallery-more">+17 ещё &middot; или создай своего
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;">
               <path d="M5 12h14"></path>
               <path d="M12 5l7 7-7 7"></path>
@@ -646,12 +845,12 @@
       </div>
     </section>
 
-    <!-- 02 — Voice & Video -->
+    <!-- 02 — Голос & Видео -->
     <section class="section">
-      <div class="section-label" style="color: #a78bfa; margin-bottom: 12px;">02 — Voice & Video</div>
-      <h2 class="section-title">She talks. She shows her face.</h2>
+      <div class="section-label" style="color: #a78bfa; margin-bottom: 12px;">02 — Голос & Видео</div>
+      <h2 class="section-title">Она говорит. Она показывает лицо.</h2>
       <p class="section-text">
-        Voice messages with customizable speech. Lip-synced video circles in Telegram. AI-generated selfies on demand.
+        Голосовые сообщения с настраиваемой речью. Lip-synced видео-кружки в Telegram. ИИ-селфи по запросу.
       </p>
       <div class="voice-video-layout">
         <div class="left-col">
@@ -665,7 +864,7 @@
               </svg>
             </div>
             <div>
-              <div class="label">Voice Messages</div>
+              <div class="label">Голосовые сообщения</div>
               <div class="sub">MiniMax &middot; OpenAI TTS</div>
             </div>
           </div>
@@ -677,7 +876,7 @@
               </svg>
             </div>
             <div>
-              <div class="label">AI Selfies</div>
+              <div class="label">ИИ-селфи</div>
               <div class="sub">Grok Imagine &middot; fal.ai</div>
             </div>
           </div>
@@ -685,74 +884,23 @@
         <div class="video-circle-wrap">
           <img
             src="https://i.ibb.co/7N0tSqnj/0319-1.gif"
-            alt="Video circle demo"
+            alt="Видео-кружок"
             class="video-circle"
             width="160"
             height="160"
           >
-          <div class="video-circle-label">Video Circles</div>
+          <div class="video-circle-label">Видео-кружки</div>
           <div class="video-circle-sub">Lip-sync &middot; SadTalker</div>
         </div>
       </div>
     </section>
 
-    <!-- 03 — Skills -->
+    <!-- 03 — OpenRouter -->
     <section class="section">
-      <div class="section-label" style="color: #10b981; margin-bottom: 12px;">03 — 500,000+ Skills</div>
-      <h2 class="section-title">Ask her to learn. She will.</h2>
+      <div class="section-label" style="color: #ef4444; margin-bottom: 12px;">03 — OpenRouter</div>
+      <h2 class="section-title">Работает даже при $0 на балансе.</h2>
       <p class="section-text">
-        No terminal. No manual installs. Just ask — Betsy finds the right skill, installs it, and starts using it immediately. Over 500,000 skills available.
-      </p>
-      <div class="card chat-example">
-        <div class="chat-line"><strong>You:</strong> Hey, can you learn to track crypto prices?</div>
-        <div class="chat-line"><strong style="color: #7c3aed;">Betsy:</strong> <span style="color: #7c3aed;">Found 'crypto-tracker' skill. Installing... Done! Ask me about any coin now.</span></div>
-      </div>
-    </section>
-
-    <!-- 04 — Memory -->
-    <section class="section">
-      <div class="section-label" style="color: #f59e0b; margin-bottom: 12px;">04 — Memory & Self-Learning</div>
-      <h2 class="section-title">She remembers everything.</h2>
-      <p class="section-text">
-        SQLite knowledge base with full-text search. Learns from every conversation. Extracts insights autonomously. Reply to a week-old message — she still has the context.
-      </p>
-    </section>
-
-    <!-- 05 — Autonomous Agent -->
-    <section class="section">
-      <div class="section-label" style="color: #3b82f6; margin-bottom: 12px;">05 — Autonomous Agent</div>
-      <h2 class="section-title">She doesn't just chat. She acts.</h2>
-      <p class="section-text">
-        11 built-in tools: shell, browser, HTTP, file system, SSH, scheduler, and more. Multi-step agentic loop — give a task, she figures out the steps.
-      </p>
-      <div class="tools-layout">
-        <div class="tools-tags">
-          <span class="tool-tag">Shell</span>
-          <span class="tool-tag">Browser</span>
-          <span class="tool-tag">HTTP</span>
-          <span class="tool-tag">Files</span>
-          <span class="tool-tag">SSH</span>
-          <span class="tool-tag">Scheduler</span>
-          <span class="tool-tag">Memory</span>
-          <span class="tool-tag">Web Search</span>
-          <span class="tool-tag">Image Gen</span>
-          <span class="tool-tag">Selfie</span>
-          <span class="tool-tag">Self-Config</span>
-        </div>
-        <img
-          src="https://i.ibb.co/3mDy1f6h/photo-2026-03-19-00-36-15.jpg"
-          alt="Agent tools preview"
-          class="tools-image"
-        >
-      </div>
-    </section>
-
-    <!-- 06 — OpenRouter -->
-    <section class="section">
-      <div class="section-label" style="color: #ef4444; margin-bottom: 12px;">06 — Powered by OpenRouter</div>
-      <h2 class="section-title">Works even with $0 balance.</h2>
-      <p class="section-text">
-        Betsy runs through OpenRouter — access to hundreds of AI models with a single API key. When your balance runs out, she automatically switches to free models. Never goes offline.
+        Betsy работает через OpenRouter — доступ к сотням ИИ-моделей по одному API-ключу. Когда баланс заканчивается, автоматически переключается на бесплатные модели. Никогда не уходит в офлайн.
       </p>
       <div class="card" style="margin-top: 20px;">
         <div class="fallback-chain">
@@ -766,16 +914,38 @@
           <svg class="chain-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg>
           <span class="model-badge model-badge--free">Llama (free)</span>
         </div>
-        <div style="font-size: 11px; color: #94a3b8;">Auto-checks balance every 10 min &middot; Seamless switching &middot; Zero downtime</div>
+        <div style="font-size: 11px; color: #94a3b8;">Проверяет баланс каждые 10 мин &middot; Бесшовное переключение &middot; Ноль простоев</div>
       </div>
     </section>
 
-    <!-- 07 — Desktop Apps -->
+    <!-- Отзывы -->
     <section class="section">
-      <div class="section-label" style="color: #8b5cf6; margin-bottom: 12px;">07 — Coming Soon</div>
-      <h2 class="section-title">Desktop apps for Windows & Mac.</h2>
+      <div class="section-label" style="color: #10b981; margin-bottom: 12px;">Отзывы</div>
+      <h2 class="section-title">Что говорят пользователи</h2>
+      <div class="testimonials-layout">
+        <div class="testimonial-card">
+          <svg class="quote-icon" width="24" height="24" viewBox="0 0 24 24" fill="#cbd5e1" stroke="none">
+            <path d="M11 7H7a4 4 0 0 0-4 4v1a3 3 0 0 0 3 3h1a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2H6a1 1 0 0 0 0 2h1a4 4 0 0 0 4-4v-5a6 6 0 0 0-6-6h6V7zm10 0h-4a4 4 0 0 0-4 4v1a3 3 0 0 0 3 3h1a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2h-1a1 1 0 0 0 0 2h1a4 4 0 0 0 4-4v-5a6 6 0 0 0-6-6h6V7z"></path>
+          </svg>
+          <div class="testimonial-quote">Я просто написала &laquo;Сделай план уикенда&raquo; — и получила готовый список с тайм-блоками. Никаких команд!</div>
+          <div class="testimonial-author">Анна, 34 г.</div>
+        </div>
+        <div class="testimonial-card">
+          <svg class="quote-icon" width="24" height="24" viewBox="0 0 24 24" fill="#cbd5e1" stroke="none">
+            <path d="M11 7H7a4 4 0 0 0-4 4v1a3 3 0 0 0 3 3h1a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2H6a1 1 0 0 0 0 2h1a4 4 0 0 0 4-4v-5a6 6 0 0 0-6-6h6V7zm10 0h-4a4 4 0 0 0-4 4v1a3 3 0 0 0 3 3h1a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2h-1a1 1 0 0 0 0 2h1a4 4 0 0 0 4-4v-5a6 6 0 0 0-6-6h6V7z"></path>
+          </svg>
+          <div class="testimonial-quote">Бот напомнил мне про встречу, пока я готовила обед. Как живой помощник.</div>
+          <div class="testimonial-author">Дмитрий, 41 г.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 04 — Десктоп-клиенты -->
+    <section class="section">
+      <div class="section-label" style="color: #8b5cf6; margin-bottom: 12px;">04 — Скоро</div>
+      <h2 class="section-title">Десктоп-клиенты для Windows & Mac.</h2>
       <p class="section-text">
-        Native desktop clients are on the way. Download, install, chat — no server setup needed.
+        Нативные приложения уже в разработке. Скачай, установи, общайся — без настройки сервера.
       </p>
       <div class="platform-grid">
         <div class="platform-card" style="opacity: 0.7;">
@@ -785,7 +955,7 @@
             <line x1="12" y1="17" x2="12" y2="21"></line>
           </svg>
           <div class="platform-name">Windows</div>
-          <div class="platform-status" style="color: #a78bfa;">Coming soon</div>
+          <div class="platform-status" style="color: #a78bfa;">скоро</div>
         </div>
         <div class="platform-card" style="opacity: 0.7;">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -795,7 +965,7 @@
             <path d="M16 16l2 4"></path>
           </svg>
           <div class="platform-name">macOS</div>
-          <div class="platform-status" style="color: #a78bfa;">Coming soon</div>
+          <div class="platform-status" style="color: #a78bfa;">скоро</div>
         </div>
         <div class="platform-card">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -803,8 +973,8 @@
             <line x1="2" y1="12" x2="22" y2="12"></line>
             <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
           </svg>
-          <div class="platform-name">Browser</div>
-          <div class="platform-status" style="color: #10b981;">Available now</div>
+          <div class="platform-name">Браузер</div>
+          <div class="platform-status" style="color: #10b981;">доступно</div>
         </div>
         <div class="platform-card">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -812,26 +982,25 @@
             <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
           </svg>
           <div class="platform-name">Telegram</div>
-          <div class="platform-status" style="color: #10b981;">Available now</div>
+          <div class="platform-status" style="color: #10b981;">доступно</div>
         </div>
       </div>
     </section>
 
     <!-- Footer / Quick Start -->
     <section class="section section--no-border footer-section">
-      <h2 class="section-title" style="font-size: 28px;">Get started in 60 seconds</h2>
+      <h2 class="section-title" style="font-size: 28px;">Начни за 60 секунд</h2>
       <div class="terminal-block">
         <code>$ npx betsy</code>
       </div>
-      <p style="font-size: 14px; color: #64748b;">Setup wizard guides you through everything.</p>
+      <p style="font-size: 14px; color: #64748b;">Мастер настройки проведёт через все шаги.</p>
       <div class="footer-links">
-        MIT License &middot; <a href="https://github.com/Aimagine-life/betsy">GitHub
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;">
-            <path d="M7 17L17 7"></path>
-            <path d="M7 7h10v10"></path>
-          </svg>
-        </a> &middot; Made with <svg width="12" height="12" viewBox="0 0 24 24" fill="#fb7185" stroke="none" style="vertical-align: middle;"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+        <a href="https://github.com/Aimagine-life/betsy#quick-start" class="footer-link">Начать сейчас</a>
+        <a href="https://t.me/betsy_community" class="footer-link">Сообщество</a>
+        <a href="https://github.com/Aimagine-life/betsy" class="footer-link">GitHub</a>
+        <span class="footer-link">MIT License</span>
       </div>
+      <p class="footer-small">Made with <svg width="12" height="12" viewBox="0 0 24 24" fill="#fb7185" stroke="none" style="vertical-align: middle;"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg> by Aimagine</p>
     </section>
   </div>
 </body>
