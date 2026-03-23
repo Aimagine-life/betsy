@@ -21,8 +21,8 @@ interface Config {
   };
   llm?: {
     api_key?: string;
-    fast?: { api_key?: string };
-    strong?: { api_key?: string };
+    fast?: { api_key?: string; provider?: string; model?: string };
+    strong?: { api_key?: string; provider?: string; model?: string };
   };
   selfies?: { fal_api_key?: string };
   skillsmp?: { api_key?: string };
@@ -518,7 +518,9 @@ function ApiKeysTab({
   config: Config;
   onSave: (patch: Partial<Config>) => void;
 }) {
-  const [openrouterKey, setOpenrouterKey] = useState(config.llm?.api_key ?? "");
+  const [openrouterKey, setOpenrouterKey] = useState(
+    config.llm?.api_key ?? config.llm?.fast?.api_key ?? config.llm?.strong?.api_key ?? "",
+  );
   const [falKey, setFalKey] = useState(config.selfies?.fal_api_key ?? "");
   const [skillsmpKey, setSkillsmpKey] = useState(config.skillsmp?.api_key ?? "");
   const [validating, setValidating] = useState(false);
