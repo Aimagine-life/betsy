@@ -97,7 +97,7 @@ function MaskedField({
       <label className={labelCls}>{label}</label>
       <div className="flex items-center gap-2">
         <input
-          type={editing ? "text" : "password"}
+          type={isMasked ? "text" : editing ? "text" : "password"}
           value={isMasked ? value.replace("***", "••••••••") : value}
           readOnly={isMasked}
           onChange={(e) => onChange(e.target.value)}
