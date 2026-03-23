@@ -52,7 +52,14 @@ export class ImageGenTool implements Tool {
         return { success: false, output: `OpenRouter error: ${response.status}`, error: errText.slice(0, 300) };
       }
 
-      const data = await response.json() as {
+      const rawText = await response.text();
+      // OpenRouter may append extra data after JSON — extract first JSON object
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        console.error("image_gen: no JSON in response", rawText.slice(0, 300));
+        return { success: false, output: "Invalid response from OpenRouter" };
+      }
+      const data = JSON.parse(jsonMatch[0]) as {
         choices?: Array<{
           message?: {
             content?: string | null;
