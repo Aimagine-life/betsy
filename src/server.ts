@@ -380,18 +380,19 @@ function handleConfigGet(res: http.ServerResponse, ctx: ServerContext) {
     return;
   }
 
-  // Mask sensitive fields
+  // Mask sensitive fields — keep prefix for identification
   const safe = JSON.parse(JSON.stringify(ctx.config));
+  const mask = (v: string) => v.slice(0, Math.min(8, Math.floor(v.length / 3))) + "***";
   if (safe.llm) {
-    if (safe.llm.api_key) safe.llm.api_key = "***";
-    if (safe.llm.fast?.api_key) safe.llm.fast.api_key = "***";
-    if (safe.llm.strong?.api_key) safe.llm.strong.api_key = "***";
+    if (safe.llm.api_key) safe.llm.api_key = mask(safe.llm.api_key);
+    if (safe.llm.fast?.api_key) safe.llm.fast.api_key = mask(safe.llm.fast.api_key);
+    if (safe.llm.strong?.api_key) safe.llm.strong.api_key = mask(safe.llm.strong.api_key);
   }
-  if (safe.telegram?.token) safe.telegram.token = "***";
-  if (safe.voice?.openai_key) safe.voice.openai_key = "***";
-  if (safe.sync_so?.api_key) safe.sync_so.api_key = "***";
-  if (safe.selfies?.fal_api_key) safe.selfies.fal_api_key = "***";
-  if (safe.skillsmp?.api_key) safe.skillsmp.api_key = "***";
+  if (safe.telegram?.token) safe.telegram.token = mask(safe.telegram.token);
+  if (safe.voice?.openai_key) safe.voice.openai_key = mask(safe.voice.openai_key);
+  if (safe.sync_so?.api_key) safe.sync_so.api_key = mask(safe.sync_so.api_key);
+  if (safe.selfies?.fal_api_key) safe.selfies.fal_api_key = mask(safe.selfies.fal_api_key);
+  if (safe.skillsmp?.api_key) safe.skillsmp.api_key = mask(safe.skillsmp.api_key);
 
   json(res, { configured: true, ...safe });
 }

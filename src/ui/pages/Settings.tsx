@@ -90,7 +90,7 @@ function MaskedField({
   placeholder?: string;
 }) {
   const [editing, setEditing] = useState(false);
-  const isMasked = !editing && value === "***";
+  const isMasked = !editing && value.includes("***");
 
   return (
     <div className="space-y-2">
@@ -98,7 +98,7 @@ function MaskedField({
       <div className="flex items-center gap-2">
         <input
           type={editing ? "text" : "password"}
-          value={isMasked ? "••••••••••••" : value}
+          value={isMasked ? value.replace("***", "••••••••") : value}
           readOnly={isMasked}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
@@ -530,7 +530,7 @@ function ApiKeysTab({
 
   async function validateKey() {
     const key = openrouterKey.trim();
-    if (!key || key === "***") return;
+    if (!key || key .includes("***")) return;
     setValidating(true);
     setBalance(null);
     setValidated(false);
@@ -559,21 +559,21 @@ function ApiKeysTab({
     setOpenrouterKey(v);
     setValidated(false);
     setBalance(null);
-    if (v && v !== "***") {
+    if (v && !v.includes("***")) {
       onSave({ llm: { ...config.llm, api_key: v } });
     }
   }
 
   function handleFalKeyChange(v: string) {
     setFalKey(v);
-    if (v && v !== "***") {
+    if (v && !v.includes("***")) {
       onSave({ selfies: { fal_api_key: v } });
     }
   }
 
   function handleSkillsmpKeyChange(v: string) {
     setSkillsmpKey(v);
-    if (v && v !== "***") {
+    if (v && !v.includes("***")) {
       onSave({ skillsmp: { api_key: v } });
     }
   }
@@ -597,7 +597,7 @@ function ApiKeysTab({
           <button
             type="button"
             onClick={() => void validateKey()}
-            disabled={!openrouterKey.trim() || openrouterKey === "***" || validating}
+            disabled={!openrouterKey.trim() || openrouterKey .includes("***") || validating}
             className="px-4 py-2 rounded-xl text-[12px] font-semibold transition-all disabled:opacity-30 text-white bg-gradient-to-r from-rose-400 to-violet-400 hover:from-rose-500 hover:to-violet-500"
           >
             {validating ? "Проверяю..." : "Проверить ключ"}
@@ -780,9 +780,9 @@ function ChannelsTab({
           <div className="space-y-2 pl-[52px]">
             <input
               type="password"
-              value={telegramToken === "***" ? "" : telegramToken}
+              value={telegramToken .includes("***") ? "" : telegramToken}
               onChange={(e) => handleTelegramToken(e.target.value)}
-              placeholder={telegramToken === "***" ? "Токен сохранён (введите новый для смены)" : "Токен от @BotFather"}
+              placeholder={telegramToken .includes("***") ? "Токен сохранён (введите новый для смены)" : "Токен от @BotFather"}
               className={inputCls2}
             />
             <input
@@ -819,9 +819,9 @@ function ChannelsTab({
           <div className="pl-[52px]">
             <input
               type="password"
-              value={maxToken === "***" ? "" : maxToken}
+              value={maxToken .includes("***") ? "" : maxToken}
               onChange={(e) => handleMaxToken(e.target.value)}
-              placeholder={maxToken === "***" ? "Токен сохранён (введите новый для смены)" : "Токен бота Max"}
+              placeholder={maxToken .includes("***") ? "Токен сохранён (введите новый для смены)" : "Токен бота Max"}
               className={inputCls2}
             />
           </div>
