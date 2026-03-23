@@ -27,6 +27,7 @@ const MAX_HISTORY = 40;
 export const MAX_PROMPT_TOKENS = 128_000;
 export const MAX_SAME_TOOL = 5;
 const PROCESS_TIMEOUT = 90_000; // 90 seconds max for entire process() call
+const MAX_TOOL_OUTPUT_CHARS = 4_000; // Truncate tool outputs to prevent history bloat
 
 export interface EngineDeps {
   llm: { fast(): LLMClient; strong(): LLMClient };
@@ -233,9 +234,13 @@ export class Engine {
           const result = await this.executeTool(tc.name, tc.arguments);
           const toolMs = Date.now() - toolStart;
 
-          const resultText = result.success
+          let resultText = result.success
             ? result.output
             : `Error: ${result.error || result.output}`;
+
+          if (resultText.length > MAX_TOOL_OUTPUT_CHARS) {
+            resultText = resultText.slice(0, MAX_TOOL_OUTPUT_CHARS) + `\n\n[обрезано: ${resultText.length} символов → ${MAX_TOOL_OUTPUT_CHARS}]`;
+          }
 
           console.log(JSON.stringify({
             tag: "engine:tool",
