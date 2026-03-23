@@ -76,13 +76,11 @@ export function isBillingError(err: unknown): boolean {
   return false;
 }
 
-/** Check if an error is a rate limit, model-not-found, or context-too-long (treat as "try next model"). */
+/** Check if an error is a rate limit or model-not-found (treat as "try next model"). */
 export function isRateLimitError(err: unknown): boolean {
   if (!(err instanceof OpenAI.APIError)) return false;
   if (err.status === 404) return true; // dead model
   if (err.status === 429 && !isBillingError(err)) return true;
-  // 400 "Provider returned error" — usually context too long for the model
-  if (err.status === 400 && !isBillingError(err)) return true;
   return false;
 }
 

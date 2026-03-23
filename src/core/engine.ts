@@ -39,7 +39,7 @@ export class Engine {
   private deps: EngineDeps;
   private histories: Map<string, LLMMessage[]> = new Map();
   private summaries: Map<string, string> = new Map();
-  private compactionInFlight: Set<string> = new Set();
+  private compactionInFlight: Map<string, Promise<void>> = new Map();
 
   constructor(deps: EngineDeps) {
     this.deps = deps;
@@ -75,6 +75,12 @@ export class Engine {
   async process(msg: IncomingMessage, onProgress?: ProgressCallback): Promise<OutgoingMessage> {
     const llm = this.deps.llm.fast();
     const userId = msg.userId;
+
+    // Wait for any in-flight compaction to finish before proceeding
+    const pending = this.compactionInFlight.get(userId);
+    if (pending) {
+      await pending;
+    }
 
     // Get or create history for this user
     if (!this.histories.has(userId)) {
@@ -169,17 +175,7 @@ export class Engine {
             promptTokens: response.usage.promptTokens,
           }));
           // Trigger compaction so the next message doesn't fail with context-too-long
-          if (!this.compactionInFlight.has(userId)) {
-            this.compactionInFlight.add(userId);
-            compactHistory(userId, this.deps.llm.fast())
-              .then(() => {
-                const { messages: m, summary: s } = loadHistory(userId);
-                this.histories.set(userId, m);
-                if (s) this.summaries.set(userId, s);
-              })
-              .catch(err => console.error("Post-limit compaction failed:", err))
-              .finally(() => this.compactionInFlight.delete(userId));
-          }
+          this.startCompaction(userId);
           return { text, mediaUrl: lastMediaUrl };
         }
 
@@ -190,16 +186,8 @@ export class Engine {
           saveMessage(userId, msg.channelName, "assistant", text);
 
           // Background compaction for terminal turns
-          if (!this.compactionInFlight.has(userId) && response.usage && response.usage.promptTokens > this.deps.contextBudget) {
-            this.compactionInFlight.add(userId);
-            compactHistory(userId, this.deps.llm.fast())
-              .then(() => {
-                const { messages: m, summary: s } = loadHistory(userId);
-                this.histories.set(userId, m);
-                if (s) this.summaries.set(userId, s);
-              })
-              .catch(err => console.error("Background compaction failed:", err))
-              .finally(() => this.compactionInFlight.delete(userId));
+          if (response.usage && response.usage.promptTokens > this.deps.contextBudget) {
+            this.startCompaction(userId);
           }
 
           return { text, mediaUrl: lastMediaUrl };
@@ -337,6 +325,20 @@ export class Engine {
     }
 
     return prompt;
+  }
+
+  /** Start background compaction for a user (deduplicates concurrent calls). */
+  private startCompaction(userId: string): void {
+    if (this.compactionInFlight.has(userId)) return;
+    const promise = compactHistory(userId, this.deps.llm.fast())
+      .then(() => {
+        const { messages: m, summary: s } = loadHistory(userId);
+        this.histories.set(userId, m);
+        if (s) this.summaries.set(userId, s);
+      })
+      .catch(err => console.error("Compaction failed:", err))
+      .finally(() => this.compactionInFlight.delete(userId));
+    this.compactionInFlight.set(userId, promise);
   }
 
   /** Execute a single tool by name. Returns full ToolResult. */
