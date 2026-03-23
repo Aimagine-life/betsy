@@ -168,6 +168,18 @@ export class Engine {
             reason: "token_budget",
             promptTokens: response.usage.promptTokens,
           }));
+          // Trigger compaction so the next message doesn't fail with context-too-long
+          if (!this.compactionInFlight.has(userId)) {
+            this.compactionInFlight.add(userId);
+            compactHistory(userId, this.deps.llm.fast())
+              .then(() => {
+                const { messages: m, summary: s } = loadHistory(userId);
+                this.histories.set(userId, m);
+                if (s) this.summaries.set(userId, s);
+              })
+              .catch(err => console.error("Post-limit compaction failed:", err))
+              .finally(() => this.compactionInFlight.delete(userId));
+          }
           return { text, mediaUrl: lastMediaUrl };
         }
 
