@@ -12,7 +12,7 @@ const DEFAULT_FALLBACKS = [
 
 const BALANCE_CHECK_INTERVAL = 10 * 60 * 1000; // 10 minutes
 const FALLBACK_RETRY_DELAY = 1000; // 1 second between fallback attempts (fixed, not exponential)
-const PER_MODEL_TIMEOUT = 60_000; // 60 seconds max per single model attempt
+const PER_MODEL_TIMEOUT = 60_000; // 60 seconds max waiting for first response / between chunks
 
 class ModelTimeoutError extends Error {
   constructor() { super("Model timed out"); }
@@ -26,6 +26,23 @@ function withModelTimeout<T>(promise: Promise<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new ModelTimeoutError()), PER_MODEL_TIMEOUT);
     promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
+/** Streaming timeout that resets on each chunk — keeps alive as long as data flows */
+function withStreamingTimeout<T>(
+  run: (resetTimer: () => void) => Promise<T>,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let timer = setTimeout(() => reject(new ModelTimeoutError()), PER_MODEL_TIMEOUT);
+    const resetTimer = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => reject(new ModelTimeoutError()), PER_MODEL_TIMEOUT);
+    };
+    run(resetTimer).then(
       (v) => { clearTimeout(timer); resolve(v); },
       (e) => { clearTimeout(timer); reject(e); },
     );
@@ -131,11 +148,13 @@ export class LLMRouter {
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
           let chunksDelivered = false;
           try {
-            const response = await withModelTimeout(getDelegate().chatStream(
-              messages,
-              (chunk) => { chunksDelivered = true; onChunk(chunk); },
-              tools,
-            ));
+            const response = await withStreamingTimeout((resetTimer) =>
+              getDelegate().chatStream(
+                messages,
+                (chunk) => { chunksDelivered = true; resetTimer(); onChunk(chunk); },
+                tools,
+              ),
+            );
             return this.attachNotification(response);
           } catch (err) {
             if (this.isRetryable(err)) {
