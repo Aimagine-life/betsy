@@ -26,7 +26,7 @@ const MAX_TURNS = 20;
 const MAX_HISTORY = 40;
 export const MAX_PROMPT_TOKENS = 128_000;
 export const MAX_SAME_TOOL = 5;
-const PROCESS_TIMEOUT = 180_000; // 180 seconds max for entire process() call
+const PROCESS_TIMEOUT = 300_000; // 5 minutes — soft budget, triggers graceful wrap-up
 const MAX_TOOL_OUTPUT_CHARS = 4_000; // Truncate tool outputs to prevent history bloat
 
 export interface EngineDeps {
@@ -132,13 +132,19 @@ export class Engine {
 
       // Agentic loop: LLM → tool calls → execute → repeat
       for (let turn = 0; turn < MAX_TURNS; turn++) {
-        // Check total time budget
+        // Soft time budget — give LLM one final chance to summarize (no tools)
         if (Date.now() - processStart > PROCESS_TIMEOUT) {
-          const text = "Извини, обработка заняла слишком много времени. Попробуй ещё раз.";
+          console.log(JSON.stringify({ tag: "engine:limit", reason: "timeout", elapsedMs: Date.now() - processStart }));
+          history.push({ role: "user", content: "Времени мало. Ответь на основе того, что уже удалось сделать. Не вызывай инструменты." });
+          const finalMessages: LLMMessage[] = [
+            { role: "system", content: systemPrompt },
+            ...history,
+          ];
+          const finalResponse = await llm.chat(finalMessages);
+          const text = finalResponse.text || "Не удалось завершить задачу полностью, но вот что получилось.";
           history.push({ role: "assistant", content: text });
           saveMessage(userId, msg.channelName, "assistant", text);
-          console.log(JSON.stringify({ tag: "engine:limit", reason: "timeout", elapsedMs: Date.now() - processStart }));
-          return { text };
+          return { text, mediaUrl: lastMediaUrl, mediaPath: lastMediaPath };
         }
 
         onProgress?.({ type: "thinking" });
@@ -300,11 +306,18 @@ export class Engine {
         onProgress?.({ type: "turn_complete", turn: turn + 1, totalTurns: MAX_TURNS });
       }
 
-      // Max turns exceeded
-      const text = "Достигнут лимит итераций. Попробуй переформулировать задачу.";
+      // Max turns exceeded — give LLM final chance to summarize
+      console.log(JSON.stringify({ tag: "engine:limit", reason: "max_turns" }));
+      history.push({ role: "user", content: "Лимит шагов достигнут. Ответь на основе того, что уже удалось сделать." });
+      const wrapMessages: LLMMessage[] = [
+        { role: "system", content: systemPrompt },
+        ...history,
+      ];
+      const wrapResponse = await llm.chat(wrapMessages);
+      const text = wrapResponse.text || "Вот что удалось сделать.";
       history.push({ role: "assistant", content: text });
       saveMessage(userId, msg.channelName, "assistant", text);
-      return { text };
+      return { text, mediaUrl: lastMediaUrl, mediaPath: lastMediaPath };
     } catch (err) {
       if (err instanceof LLMUnavailableError) {
         const text = "Извини, сейчас не могу ответить — все модели недоступны. Попробуй через пару минут.";
