@@ -125,6 +125,7 @@ export class Engine {
 
     try {
       let lastMediaUrl: string | undefined;
+      let lastMediaPath: string | undefined;
       const toolCallCounts = new Map<string, number>();
       let compactionAttempted = false;
       const processStart = Date.now();
@@ -184,7 +185,7 @@ export class Engine {
           }));
           // Trigger compaction so the next message doesn't fail with context-too-long
           this.startCompaction(userId);
-          return { text, mediaUrl: lastMediaUrl };
+          return { text, mediaUrl: lastMediaUrl, mediaPath: lastMediaPath };
         }
 
         // If LLM didn't request tools, return the text response
@@ -198,7 +199,7 @@ export class Engine {
             this.startCompaction(userId);
           }
 
-          return { text, mediaUrl: lastMediaUrl };
+          return { text, mediaUrl: lastMediaUrl, mediaPath: lastMediaPath };
         }
 
         // Compaction check for tool-use turns — BEFORE saving assistant tool-call
@@ -255,6 +256,9 @@ export class Engine {
           if (result.mediaUrl) {
             lastMediaUrl = result.mediaUrl;
           }
+          if (result.mediaPath) {
+            lastMediaPath = result.mediaPath;
+          }
 
           history.push({
             role: "tool",
@@ -290,7 +294,7 @@ export class Engine {
           const text = finalResponse.text || `Инструмент "${overused[0]}" использован ${overused[1]} раз, но не удалось сформировать ответ.`;
           history.push({ role: "assistant", content: text });
           saveMessage(userId, msg.channelName, "assistant", text);
-          return { text, mediaUrl: lastMediaUrl };
+          return { text, mediaUrl: lastMediaUrl, mediaPath: lastMediaPath };
         }
 
         onProgress?.({ type: "turn_complete", turn: turn + 1, totalTurns: MAX_TURNS });

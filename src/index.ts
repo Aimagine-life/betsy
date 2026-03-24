@@ -24,6 +24,7 @@ import { SelfieTool } from "./core/tools/selfie.js";
 import { ImageGenTool } from "./core/tools/image-gen.js";
 import { SkillSearchTool } from "./core/tools/skill-search.js";
 import { SkillInstallTool } from "./core/tools/skill-install.js";
+import { SendFileTool } from "./core/tools/send-file.js";
 
 function getAddress(): string {
   const nets = os.networkInterfaces();
@@ -87,6 +88,7 @@ async function main() {
   schedulerStore.init();
   const scheduler = new SchedulerService(schedulerStore);
   tools.register(new ShellTool());
+  tools.register(new SendFileTool());
   tools.register(new FilesTool());
   tools.register(new HttpTool());
   tools.register(new BrowserTool());

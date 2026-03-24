@@ -193,9 +193,36 @@ function chunkText(text: string, maxLen: number): string[] {
   return chunks;
 }
 
+/** File extension to Telegram send method mapping. */
+const VIDEO_EXTS = new Set([".mp4", ".webm", ".mkv", ".avi", ".mov"]);
+const AUDIO_EXTS = new Set([".mp3", ".ogg", ".wav", ".flac", ".m4a", ".aac", ".opus"]);
+
 /** Deliver an OutgoingMessage through the appropriate Telegram media type. */
 async function deliver(ctx: Context, response: OutgoingMessage): Promise<void> {
   const mode = response.mode ?? "text";
+
+  // If response has a local file to send
+  if (response.mediaPath && fs.existsSync(response.mediaPath)) {
+    try {
+      const { InputFile } = await import("grammy");
+      const ext = path.extname(response.mediaPath).toLowerCase();
+      const caption = response.text ? markdownToTelegramHtml(response.text).slice(0, 1024) : undefined;
+      const parseMode = caption ? ("HTML" as const) : undefined;
+      const file = new InputFile(response.mediaPath);
+
+      if (VIDEO_EXTS.has(ext)) {
+        await ctx.replyWithVideo(file, { caption, parse_mode: parseMode });
+      } else if (AUDIO_EXTS.has(ext)) {
+        await ctx.replyWithAudio(file, { caption, parse_mode: parseMode });
+      } else {
+        await ctx.replyWithDocument(file, { caption, parse_mode: parseMode });
+      }
+      return;
+    } catch (err) {
+      console.error("Failed to send file:", err instanceof Error ? err.message : err);
+      // Fall through to text delivery
+    }
+  }
 
   // If response has a media URL (e.g. from selfie/image_gen tool), send as photo
   if (response.mediaUrl) {

@@ -12,6 +12,8 @@ export interface OutgoingMessage {
   text: string
   mode?: 'text' | 'voice' | 'video' | 'selfie'
   mediaUrl?: string
+  /** Path to a local file to send to the user (video, audio, document). */
+  mediaPath?: string
 }
 
 export interface LLMMessage {

@@ -10,6 +10,8 @@ export interface ToolResult {
   output: string
   error?: string
   mediaUrl?: string
+  /** Path to a local file to send to the user (video, audio, document). */
+  mediaPath?: string
 }
 
 export interface Tool {
