@@ -82,6 +82,7 @@ export function isRateLimitError(err: unknown): boolean {
   if (err.status === 404) return true; // dead model
   if (err.status === 429 && !isBillingError(err)) return true;
   if (err.status === 408 || err.status === 502 || err.status === 503 || err.status === 504) return true; // transient provider errors
+  if (err.status === 400 && /provider returned error/i.test(err.message ?? "")) return true; // upstream provider error
   return false;
 }
 
