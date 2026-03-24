@@ -27,7 +27,7 @@ export class ShellTool implements Tool {
     }
 
     return new Promise((resolve) => {
-      exec(command, { timeout: 30_000 }, (err, stdout, stderr) => {
+      exec(command, { timeout: 120_000 }, (err, stdout, stderr) => {
         if (err) {
           resolve({ success: false, output: stderr || stdout || "", error: err.message })
         } else {
