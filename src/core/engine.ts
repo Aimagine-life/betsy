@@ -26,7 +26,7 @@ const MAX_TURNS = 20;
 const MAX_HISTORY = 40;
 export const MAX_PROMPT_TOKENS = 128_000;
 export const MAX_SAME_TOOL = 5;
-const PROCESS_TIMEOUT = 90_000; // 90 seconds max for entire process() call
+const PROCESS_TIMEOUT = 180_000; // 180 seconds max for entire process() call
 const MAX_TOOL_OUTPUT_CHARS = 4_000; // Truncate tool outputs to prevent history bloat
 
 export interface EngineDeps {
