@@ -3,11 +3,11 @@ import { createOpenRouterClient } from "./providers/openrouter.js";
 import { isBillingError, isRateLimitError, checkBalance } from "./providers/openrouter.js";
 
 const DEFAULT_FALLBACKS = [
+  "openrouter/free",
   "qwen/qwen3-coder:free",
   "nvidia/nemotron-3-super-120b-a12b:free",
   "mistralai/mistral-small-3.1-24b-instruct:free",
   "meta-llama/llama-3.3-70b-instruct:free",
-  "openrouter/free",
 ];
 
 const BALANCE_CHECK_INTERVAL = 10 * 60 * 1000; // 10 minutes

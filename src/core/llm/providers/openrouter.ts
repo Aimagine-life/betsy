@@ -76,11 +76,12 @@ export function isBillingError(err: unknown): boolean {
   return false;
 }
 
-/** Check if an error is a rate limit or model-not-found (treat as "try next model"). */
+/** Check if an error is a rate limit, transient, or model-not-found (treat as "try next model"). */
 export function isRateLimitError(err: unknown): boolean {
   if (!(err instanceof OpenAI.APIError)) return false;
   if (err.status === 404) return true; // dead model
   if (err.status === 429 && !isBillingError(err)) return true;
+  if (err.status === 408 || err.status === 502 || err.status === 503 || err.status === 504) return true; // transient provider errors
   return false;
 }
 
