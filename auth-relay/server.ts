@@ -48,9 +48,12 @@ function json(res: ServerResponse, status: number, data: unknown): void {
   res.end(JSON.stringify(data));
 }
 
-function html(res: ServerResponse, body: string): void {
+function html(res: ServerResponse, body: string, autoClose = false): void {
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-  res.end(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Betsy</title></head><body style="font-family:sans-serif;text-align:center;padding-top:80px;"><h1>${body}</h1></body></html>`);
+  const closeScript = autoClose
+    ? `<p id="timer" style="color:#888;margin-top:20px;">Окно закроется через <span id="sec">5</span> сек.</p><script>let s=5;const el=document.getElementById("sec");const t=setInterval(()=>{s--;el.textContent=s;if(s<=0){clearInterval(t);window.close();}},1000);</script>`
+    : "";
+  res.end(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Betsy</title></head><body style="font-family:sans-serif;text-align:center;padding-top:80px;"><h1>${body}</h1>${closeScript}</body></html>`);
 }
 
 async function readBody(req: IncomingMessage): Promise<string> {
@@ -138,7 +141,7 @@ async function handleCallback(serviceName: string, params: URLSearchParams, res:
       expires_in: tokenData.expires_in as number | undefined,
     };
 
-    html(res, "✅ Готово! Можешь закрыть это окно и вернуться к Betsy.");
+    html(res, "✅ Готово! Можешь закрыть это окно и вернуться к Betsy.", true);
   } catch (err) {
     console.error(`Token exchange error for ${serviceName}:`, err);
     html(res, "Ошибка. Попробуй ещё раз.");
