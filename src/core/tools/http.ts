@@ -1,12 +1,23 @@
-import type { Tool, ToolResult } from "./types.js"
+import type { Tool, ToolResult } from "./types.js";
+import { TokenStore } from "../../services/tokens.js";
+import { listServices } from "../../services/catalog.js";
 
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text
   return text.slice(0, max) + `\n\n[truncated, showing first ${max} of ${text.length} chars]`
 }
 
+export interface HttpToolConfig {
+  encryptionKey?: string;
+}
+
 export class HttpTool implements Tool {
   static readonly MAX_OUTPUT_CHARS = 8000
+  private encryptionKey?: string;
+
+  constructor(config?: HttpToolConfig) {
+    this.encryptionKey = config?.encryptionKey;
+  }
 
   name = "http"
   description = "Make HTTP API requests (JSON/REST). For browsing websites use the 'web' or 'browser' tool."
@@ -26,12 +37,22 @@ export class HttpTool implements Tool {
     const method = ((params.method as string) || "GET").toUpperCase()
     const body = params.body as string | undefined
 
-    let headers: Record<string, string> | undefined
+    let headers: Record<string, string> = {}
     if (params.headers) {
       try {
         headers = typeof params.headers === "string" ? JSON.parse(params.headers) : (params.headers as Record<string, string>)
       } catch {
         return { success: false, output: "", error: "Invalid headers: must be a JSON-encoded object" }
+      }
+    }
+
+    const userId = params._userId as string | undefined;
+
+    // Auto-inject Authorization header for connected services
+    if (!headers["Authorization"] && !headers["authorization"] && userId) {
+      const authHeader = this.resolveAuthHeader(url, userId);
+      if (authHeader) {
+        headers["Authorization"] = authHeader;
       }
     }
 
@@ -58,5 +79,22 @@ export class HttpTool implements Tool {
     } catch (err) {
       return { success: false, output: "", error: (err as Error).message }
     }
+  }
+
+  resolveAuthHeader(url: string, userId: string): string | null {
+    if (!this.encryptionKey) return null;
+    const services = listServices();
+    for (const svc of services) {
+      for (const baseUrl of Object.values(svc.baseUrls)) {
+        if (url.startsWith(baseUrl)) {
+          const store = new TokenStore(this.encryptionKey);
+          const token = store.get(svc.id, userId);
+          if (token && !token.isExpired()) {
+            return `Bearer ${token.accessToken}`;
+          }
+        }
+      }
+    }
+    return null;
   }
 }

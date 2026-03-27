@@ -39,6 +39,7 @@ export function buildSystemPrompt(
   config: PromptConfig,
   userMessage?: string,
   chatId?: string,
+  connectedServices?: string[],
 ): string {
   const name = config.name || "Betsy";
   const gender = config.gender ?? "female";
@@ -138,6 +139,12 @@ ${genderBlock}
 ## Прогресс
 
 Если выполняешь многоходовую задачу, показывай прогресс каждого шага.`;
+
+  if (connectedServices && connectedServices.length > 0) {
+    prompt += `\n\n## Подключённые сервисы\n\nУ пользователя подключены: ${connectedServices.join(", ")}. Для запросов к этим сервисам используй tool \`http\` с правильным URL и заголовком Authorization. Токен подставится автоматически. Для подключения новых сервисов или просмотра доступных используй tool \`connect_service\`.`;
+  } else {
+    prompt += `\n\n## Подключённые сервисы\n\nУ пользователя нет подключённых сервисов. Для подключения используй tool \`connect_service\` с action=list.`;
+  }
 
   // Current query
   if (userMessage) {

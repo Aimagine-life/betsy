@@ -7,6 +7,9 @@ import { searchKnowledge } from "./memory/knowledge.js";
 import { saveMessage, loadHistory, extractText } from "./memory/conversations.js";
 import { compactHistory } from "./memory/compaction.js";
 import { LLMUnavailableError } from "./llm/router.js";
+import { TokenStore } from "../services/tokens.js";
+import { getService } from "../services/catalog.js";
+import { SkillsStore } from "../services/skills-store.js";
 
 function historyChars(history: LLMMessage[]): number {
   let total = 0;
@@ -34,6 +37,7 @@ export interface EngineDeps {
   config: PromptConfig;
   tools: ToolRegistry;
   contextBudget: number;
+  encryptionKey?: string;
 }
 
 export class Engine {
@@ -238,7 +242,7 @@ export class Engine {
           onProgress?.({ type: "tool_start", tool: tc.name, turn: turn + 1 });
 
           const toolStart = Date.now();
-          const result = await this.executeTool(tc.name, tc.arguments);
+          const result = await this.executeTool(tc.name, tc.arguments, userId);
           const toolMs = Date.now() - toolStart;
 
           let resultText = result.success
@@ -333,7 +337,19 @@ export class Engine {
 
   /** Build system prompt and inject relevant memory context. */
   private buildPromptWithMemory(userMessage: string, chatId: string): string {
-    let prompt = buildSystemPrompt(this.deps.config, userMessage, chatId);
+    let connectedServiceNames: string[] = [];
+    if (this.deps.encryptionKey) {
+      try {
+        const tokenStore = new TokenStore(this.deps.encryptionKey);
+        const tokens = tokenStore.listConnected(chatId);
+        connectedServiceNames = tokens.map(t => {
+          const svc = getService(t.serviceId);
+          return svc ? `${svc.name} (${t.scopes})` : t.serviceId;
+        });
+      } catch {}
+    }
+
+    let prompt = buildSystemPrompt(this.deps.config, userMessage, chatId, connectedServiceNames);
 
     // Search knowledge base for context relevant to the user's message
     try {
@@ -347,6 +363,19 @@ export class Engine {
     } catch {
       // Memory not initialized yet — skip
     }
+
+    // Inject installed skills context
+    try {
+      const skillsStore = new SkillsStore();
+      const allSkills = skillsStore.listAll();
+      if (allSkills.length > 0) {
+        const skillContext = allSkills
+          .slice(0, 3)
+          .map((s, i) => `${i + 1}. [${s.name}] ${s.description}`)
+          .join("\n");
+        prompt += `\n\n## Установленные скиллы\n\n${skillContext}\n\nЧтобы использовать скилл, вспомни его содержимое из памяти.`;
+      }
+    } catch {}
 
     const summary = this.summaries.get(chatId);
     if (summary) {
@@ -371,14 +400,15 @@ export class Engine {
   }
 
   /** Execute a single tool by name. Returns full ToolResult. */
-  private async executeTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
+  private async executeTool(name: string, args: Record<string, unknown>, userId?: string): Promise<ToolResult> {
     const tool = this.deps.tools.get(name);
     if (!tool) {
       return { success: false, output: "", error: `unknown tool "${name}"` };
     }
 
     try {
-      return await tool.execute(args);
+      const params = userId ? { ...args, _userId: userId } : args;
+      return await tool.execute(params);
     } catch (err) {
       return { success: false, output: "", error: err instanceof Error ? err.message : String(err) };
     }

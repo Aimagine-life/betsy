@@ -25,6 +25,7 @@ import { ImageGenTool } from "./core/tools/image-gen.js";
 import { SkillSearchTool } from "./core/tools/skill-search.js";
 import { SkillInstallTool } from "./core/tools/skill-install.js";
 import { SendFileTool } from "./core/tools/send-file.js";
+import { ConnectServiceTool } from "./core/tools/connect-service.js";
 
 function getAddress(): string {
   const nets = os.networkInterfaces();
@@ -90,13 +91,15 @@ async function main() {
   tools.register(new ShellTool());
   tools.register(new SendFileTool());
   tools.register(new FilesTool());
-  tools.register(new HttpTool());
+  tools.register(new HttpTool({ encryptionKey: config.security?.password_hash }));
   tools.register(new BrowserTool());
   tools.register(memoryTool);
   tools.register(selfConfigTool);
   tools.register(scheduler.tool);
   tools.register(sshTool);
   tools.register(npmInstallTool);
+  const passwordHash = config.security?.password_hash ?? "default-key-change-me";
+  tools.register(new ConnectServiceTool({ encryptionKey: passwordHash }));
   // Selfie tool — uses fal.ai key from selfies config, falls back to video config
   const selfiesConfig = config.selfies as Record<string, string> | undefined;
   const videoConfig = config.video as Record<string, string> | undefined;
@@ -114,7 +117,7 @@ async function main() {
   const skillsmpKey = (config as any).skillsmp?.api_key as string | undefined;
   if (skillsmpKey) {
     tools.register(new SkillSearchTool({ apiKey: skillsmpKey }));
-    tools.register(new SkillInstallTool());
+    tools.register(new SkillInstallTool({ apiKey: llmApiKey ?? undefined }));
   }
   // Web tool — conditional on google config
   const googleConfig = (config as any).google as { api_key: string; cx: string } | undefined;
@@ -140,6 +143,7 @@ async function main() {
     },
     tools,
     contextBudget: config.memory?.context_budget ?? 40000,
+    encryptionKey: config.security?.password_hash,
   }) : null;
 
   // Start HTTP server
