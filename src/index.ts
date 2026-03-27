@@ -99,7 +99,35 @@ async function main() {
   tools.register(sshTool);
   tools.register(npmInstallTool);
   const passwordHash = config.security?.password_hash ?? "default-key-change-me";
-  tools.register(new ConnectServiceTool({ encryptionKey: passwordHash }));
+  // channels map is populated later — closure captures the reference
+  const channels = new Map<string, Channel>();
+  tools.register(new ConnectServiceTool({
+    encryptionKey: passwordHash,
+    onConnected: async (userId, service, scopes) => {
+      // Send confirmation message to user via their channel
+      for (const channel of channels.values()) {
+        try {
+          const scopeLabels = scopes.map(s => service.scopes[s] ?? s).join(", ");
+          await channel.send(userId, {
+            text: `✅ ${service.name} подключён! Доступны: ${scopeLabels}. Проверяю подключение...`,
+          });
+          // Ask engine to verify the connection
+          if (engine) {
+            const result = await engine.process({
+              channelName: channel.name,
+              userId,
+              text: `Сервис ${service.name} только что подключился (${scopeLabels}). Сделай один тестовый запрос к API чтобы проверить что всё работает, и коротко расскажи результат.`,
+              timestamp: Date.now(),
+              metadata: { serviceConnected: true },
+            });
+            await channel.send(userId, result);
+          }
+        } catch (err) {
+          console.error(`❌ onConnected notification error:`, err);
+        }
+      }
+    },
+  }));
   // Selfie tool — uses fal.ai key from selfies config, falls back to video config
   const selfiesConfig = config.selfies as Record<string, string> | undefined;
   const videoConfig = config.video as Record<string, string> | undefined;
@@ -190,7 +218,6 @@ async function main() {
     }
   }
 
-  const channels = new Map<string, Channel>();
   if (telegram) {
     channels.set("telegram", telegram);
   }

@@ -1,9 +1,12 @@
 import type { Tool, ToolResult } from "./types.js";
-import { listServices, getService } from "../../services/catalog.js";
+import { listServices, getService, type ServiceDefinition } from "../../services/catalog.js";
 import { TokenStore } from "../../services/tokens.js";
+
+export type OnConnectedCallback = (userId: string, service: ServiceDefinition, scopes: string[]) => void;
 
 export interface ConnectServiceConfig {
   encryptionKey: string;
+  onConnected?: OnConnectedCallback;
 }
 
 export class ConnectServiceTool implements Tool {
@@ -19,9 +22,13 @@ export class ConnectServiceTool implements Tool {
   ];
 
   private tokenStore: TokenStore;
+  private encryptionKey: string;
+  private onConnected?: OnConnectedCallback;
 
   constructor(config: ConnectServiceConfig) {
     this.tokenStore = new TokenStore(config.encryptionKey);
+    this.encryptionKey = config.encryptionKey;
+    this.onConnected = config.onConnected;
   }
 
   async execute(params: Record<string, unknown>): Promise<ToolResult> {
@@ -76,7 +83,7 @@ export class ConnectServiceTool implements Tool {
       const data = await response.json() as { instance_id: string; auth_url: string };
 
       // Start polling in background — don't block the response
-      this.pollForToken(service.relayUrl, data.instance_id).then(token => {
+      this.pollForToken(service.relayUrl, data.instance_id).then(async token => {
         if (token) {
           this.tokenStore.save({
             serviceId,
@@ -87,6 +94,15 @@ export class ConnectServiceTool implements Tool {
             expiresAt: Math.floor(Date.now() / 1000) + (token.expires_in ?? 3600),
           });
           console.log(`✅ OAuth: ${service.name} подключён для ${userId}`);
+
+          // Verify token works with a test request
+          const verification = await this.verifyConnection(serviceId, token.access_token);
+          console.log(`🔍 OAuth verify ${service.name}: ${verification}`);
+
+          // Notify via callback (sends message to user's chat)
+          if (this.onConnected) {
+            this.onConnected(userId, service, requestedScopes);
+          }
         } else {
           console.log(`⚠️ OAuth: ${service.name} — авторизация не завершена для ${userId}`);
         }
@@ -147,6 +163,31 @@ export class ConnectServiceTool implements Tool {
     }
 
     return { success: true, output: lines.join("\n") };
+  }
+
+  /** Make a lightweight test request to verify the token actually works. */
+  private async verifyConnection(serviceId: string, accessToken: string): Promise<string> {
+    const testUrls: Record<string, string> = {
+      google: "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+      github: "https://api.github.com/user",
+      vk: "https://api.vk.com/method/users.get?v=5.199",
+      yandex: "https://cloud-api.yandex.net/v1/disk/",
+      reddit: "https://oauth.reddit.com/api/v1/me",
+      mailru: "https://oauth.mail.ru/userinfo",
+    };
+    const url = testUrls[serviceId];
+    if (!url) return "no test URL";
+
+    try {
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (res.ok) return "OK";
+      return `HTTP ${res.status}`;
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
   }
 
   private async pollForToken(
