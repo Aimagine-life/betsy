@@ -1,0 +1,60 @@
+port: 3780
+
+services:
+  google:
+    client_id: "YOUR_CLIENT_ID.apps.googleusercontent.com"
+    client_secret: "GOCSPX-YOUR_SECRET"
+    auth_url: "https://accounts.google.com/o/oauth2/v2/auth"
+    token_url: "https://oauth2.googleapis.com/token"
+    scopes:
+      gmail:
+        - "https://www.googleapis.com/auth/gmail.readonly"
+        - "https://www.googleapis.com/auth/gmail.send"
+        - "https://www.googleapis.com/auth/gmail.modify"
+      youtube:
+        - "https://www.googleapis.com/auth/youtube.readonly"
+        - "https://www.googleapis.com/auth/youtube.force-ssl"
+      calendar:
+        - "https://www.googleapis.com/auth/calendar"
+        - "https://www.googleapis.com/auth/calendar.events"
+      drive:
+        - "https://www.googleapis.com/auth/drive"
+        - "https://www.googleapis.com/auth/drive.file"
+      contacts:
+        - "https://www.googleapis.com/auth/contacts.readonly"
+  github:
+    client_id: "YOUR_CLIENT_ID"
+    client_secret: "YOUR_CLIENT_SECRET"
+    auth_url: "https://github.com/login/oauth/authorize"
+    token_url: "https://github.com/login/oauth/access_token"
+    scopes:
+      default: ["repo", "user"]
+  vk:
+    client_id: "YOUR_APP_ID"
+    client_secret: "YOUR_SECRET_KEY"
+    auth_url: "https://oauth.vk.com/authorize"
+    token_url: "https://oauth.vk.com/access_token"
+    scopes:
+      default: ["messages", "wall", "friends", "photos"]
+  yandex:
+    client_id: "YOUR_CLIENT_ID"
+    client_secret: "YOUR_CLIENT_SECRET"
+    auth_url: "https://oauth.yandex.ru/authorize"
+    token_url: "https://oauth.yandex.ru/token"
+    scopes:
+      mail: ["mail:imap_full"]
+      disk: ["cloud_api:disk.read", "cloud_api:disk.write"]
+  reddit:
+    client_id: "YOUR_CLIENT_ID"
+    client_secret: "YOUR_CLIENT_SECRET"
+    auth_url: "https://www.reddit.com/api/v1/authorize"
+    token_url: "https://www.reddit.com/api/v1/access_token"
+    scopes:
+      default: ["read", "identity", "mysubreddits"]
+  mailru:
+    client_id: "YOUR_CLIENT_ID"
+    client_secret: "YOUR_CLIENT_SECRET"
+    auth_url: "https://oauth.mail.ru/login"
+    token_url: "https://oauth.mail.ru/token"
+    scopes:
+      default: ["userinfo", "mail.imap"]

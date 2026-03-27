@@ -1,0 +1,12 @@
+{
+  "name": "betsy-auth-relay",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-strip-types server.ts",
+    "dev": "node --watch --experimental-strip-types server.ts"
+  },
+  "dependencies": {
+    "yaml": "^2.7.0"
+  }
+}
