@@ -75,27 +75,29 @@ export class ConnectServiceTool implements Tool {
 
       const data = await response.json() as { instance_id: string; auth_url: string };
 
-      const token = await this.pollForToken(service.relayUrl, data.instance_id);
-
-      if (!token) {
-        return {
-          success: false,
-          output: `Авторизация не была завершена за 5 минут. Давай попробуем ещё раз? Скажи "подключи ${service.name}" и я скину новую ссылку.`,
-        };
-      }
-
-      this.tokenStore.save({
-        serviceId,
-        userId,
-        accessToken: token.access_token,
-        refreshToken: token.refresh_token,
-        scopes: requestedScopes.join(","),
-        expiresAt: Math.floor(Date.now() / 1000) + (token.expires_in ?? 3600),
+      // Start polling in background — don't block the response
+      this.pollForToken(service.relayUrl, data.instance_id).then(token => {
+        if (token) {
+          this.tokenStore.save({
+            serviceId,
+            userId,
+            accessToken: token.access_token,
+            refreshToken: token.refresh_token,
+            scopes: requestedScopes.join(","),
+            expiresAt: Math.floor(Date.now() / 1000) + (token.expires_in ?? 3600),
+          });
+          console.log(`✅ OAuth: ${service.name} подключён для ${userId}`);
+        } else {
+          console.log(`⚠️ OAuth: ${service.name} — авторизация не завершена для ${userId}`);
+        }
+      }).catch(err => {
+        console.error(`❌ OAuth polling error for ${service.name}:`, err);
       });
 
+      // Return immediately with the auth URL
       return {
         success: true,
-        output: `${service.name} подключён! Доступны: ${scopeLabels}. Ссылка для авторизации: ${data.auth_url}`,
+        output: `Отправь пользователю эту ссылку для авторизации: ${data.auth_url}\n\nПосле авторизации ${service.name} подключится автоматически (${scopeLabels}).`,
       };
     } catch (err) {
       return {
