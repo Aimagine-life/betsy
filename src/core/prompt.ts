@@ -141,7 +141,7 @@ ${genderBlock}
 Если выполняешь многоходовую задачу, показывай прогресс каждого шага.`;
 
   if (connectedServices && connectedServices.length > 0) {
-    prompt += `\n\n## Подключённые сервисы\n\nУ пользователя подключены: ${connectedServices.join(", ")}. Для запросов к этим сервисам используй tool \`http\` с правильным URL и заголовком Authorization. Токен подставится автоматически. Для подключения новых сервисов или просмотра доступных используй tool \`connect_service\`.`;
+    prompt += `\n\n## Подключённые сервисы\n\nУ пользователя подключены: ${connectedServices.join(", ")}. Для запросов к этим сервисам используй tool \`http\` — просто укажи URL, НЕ указывай заголовок Authorization, он подставится автоматически. Пример: http(url="https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=5", method="GET") — БЕЗ headers. Для подключения новых сервисов используй tool \`connect_service\`.`;
   } else {
     prompt += `\n\n## Подключённые сервисы\n\nУ пользователя нет подключённых сервисов. Для подключения используй tool \`connect_service\` с action=list.`;
   }

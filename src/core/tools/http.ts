@@ -20,7 +20,7 @@ export class HttpTool implements Tool {
   }
 
   name = "http"
-  description = "Make HTTP API requests (JSON/REST). For browsing websites use the 'web' or 'browser' tool."
+  description = "Make HTTP API requests (JSON/REST). For browsing websites use the 'web' or 'browser' tool. Authorization headers for connected services (Google, GitHub, VK etc.) are injected AUTOMATICALLY — do NOT set Authorization header manually for these services, just provide the URL."
   parameters = [
     { name: "url", type: "string", description: "The URL to request", required: true },
     { name: "method", type: "string", description: "HTTP method: GET, POST, PUT, or DELETE" },
@@ -49,7 +49,8 @@ export class HttpTool implements Tool {
     const userId = params._userId as string | undefined;
 
     // Auto-inject Authorization header for connected services
-    if (!headers["Authorization"] && !headers["authorization"] && userId) {
+    // Always overwrite for known service URLs (LLM may put a placeholder like "[TOKEN]")
+    if (userId) {
       const authHeader = this.resolveAuthHeader(url, userId);
       if (authHeader) {
         headers["Authorization"] = authHeader;
