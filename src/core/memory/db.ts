@@ -134,6 +134,28 @@ export function getDB(dbPath?: string): Database.Database {
 
   db.exec("CREATE INDEX IF NOT EXISTS idx_conv_user ON conversations(user_id, timestamp)");
 
+  db.exec(`CREATE TABLE IF NOT EXISTS service_tokens (
+    service_id    TEXT NOT NULL,
+    user_id       TEXT NOT NULL,
+    access_token  TEXT NOT NULL,
+    refresh_token TEXT,
+    scopes        TEXT,
+    expires_at    INTEGER,
+    created_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (service_id, user_id)
+  )`);
+
+  db.exec(`CREATE TABLE IF NOT EXISTS installed_skills (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    service_id   TEXT,
+    name         TEXT NOT NULL,
+    description  TEXT NOT NULL,
+    content      TEXT NOT NULL,
+    embedding    BLOB,
+    source_url   TEXT,
+    installed_at INTEGER NOT NULL DEFAULT (unixepoch())
+  )`);
+
   return db;
 }
 
