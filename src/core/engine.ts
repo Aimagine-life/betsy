@@ -30,7 +30,7 @@ const MAX_HISTORY = 40;
 export const MAX_PROMPT_TOKENS = 128_000;
 export const MAX_SAME_TOOL = 5;
 const PROCESS_TIMEOUT = 300_000; // 5 minutes — soft budget, triggers graceful wrap-up
-const MAX_TOOL_OUTPUT_CHARS = 4_000; // Truncate tool outputs to prevent history bloat
+const MAX_TOOL_OUTPUT_CHARS = 8_000; // Truncate tool outputs to prevent history bloat
 
 export interface EngineDeps {
   llm: { fast(): LLMClient; strong(): LLMClient };

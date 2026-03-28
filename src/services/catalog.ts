@@ -33,12 +33,12 @@ const services: ServiceDefinition[] = [
     },
     actions: {
       gmail: [
-        { name: "list_messages", method: "GET", path: "/gmail/v1/users/me/messages", description: "Получить список писем" },
-        { name: "get_message", method: "GET", path: "/gmail/v1/users/me/messages/{id}?format=full", description: "Прочитать письмо по ID" },
-        { name: "send_message", method: "POST", path: "/gmail/v1/users/me/messages/send", description: "Отправить письмо" },
-        { name: "search_messages", method: "GET", path: "/gmail/v1/users/me/messages?q={query}", description: "Поиск писем" },
-        { name: "list_labels", method: "GET", path: "/gmail/v1/users/me/labels", description: "Список папок/меток" },
-        { name: "get_profile", method: "GET", path: "/gmail/v1/users/me/profile", description: "Профиль почты" },
+        { name: "list_messages", method: "GET", path: "/gmail/v1/users/me/messages?maxResults=10", description: "Получить список писем (возвращает id). Используй q= для поиска" },
+        { name: "get_message_metadata", method: "GET", path: "/gmail/v1/users/me/messages/{id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date", description: "Заголовки письма: от кого, кому, тема, дата. Используй для списка писем" },
+        { name: "get_message_text", method: "GET", path: "/gmail/v1/users/me/messages/{id}?format=full&fields=payload(headers,mimeType,body,parts(mimeType,body))", description: "Текст письма. body.data в base64url — декодируй через shell: echo DATA | tr '_-' '/+' | base64 -d" },
+        { name: "send_message", method: "POST", path: "/gmail/v1/users/me/messages/send", description: "Отправить письмо. Body: {raw: base64url-encoded RFC 2822 message}" },
+        { name: "search_messages", method: "GET", path: "/gmail/v1/users/me/messages?q={query}&maxResults=10", description: "Поиск писем. q=from:user@example.com, q=subject:тема, q=is:unread" },
+        { name: "get_profile", method: "GET", path: "/gmail/v1/users/me/profile", description: "Профиль почты (email, кол-во писем)" },
       ],
       youtube: [
         { name: "search_videos", method: "GET", path: "/youtube/v3/search?part=snippet&type=video&q={query}", description: "Поиск видео" },
