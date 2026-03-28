@@ -326,18 +326,32 @@ export class Engine {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error("Engine error:", errorMsg);
 
-      if (err instanceof LLMUnavailableError) {
-        const text = "Секунду, что-то подвисла... Повтори, пожалуйста, через минутку 🙏";
+      // Try to let LLM explain what happened naturally
+      try {
+        const errorContext = errorMsg.includes("timed out") ? "запрос к языковой модели завис — слишком долго думала"
+          : errorMsg.includes("billing") || errorMsg.includes("402") ? "закончились кредиты на API языковой модели"
+          : errorMsg.includes("rate") || errorMsg.includes("429") ? "слишком много запросов, API временно ограничил доступ"
+          : errorMsg.includes("503") || errorMsg.includes("502") ? "сервер языковой модели временно недоступен"
+          : `техническая проблема: ${errorMsg}`;
+
+        history.push({ role: "user", content: `[Системное сообщение: произошла ошибка — ${errorContext}. Объясни пользователю своими словами что случилось, извинись и предложи попробовать ещё раз. Не используй технические термины. Будь краткой.]` });
+
+        const recoveryMessages: LLMMessage[] = [
+          { role: "system", content: systemPrompt },
+          ...history,
+        ];
+        const recoveryResponse = await llm.chat(recoveryMessages);
+        const text = recoveryResponse.text || "Прости, что-то у меня зависло. Повтори, пожалуйста!";
+        history.push({ role: "assistant", content: text });
+        saveMessage(userId, msg.channelName, "assistant", text);
+        return { text };
+      } catch {
+        // If even the recovery LLM call fails, use a simple message
+        const text = "Прости, что-то у меня зависло. Повтори, пожалуйста!";
         history.push({ role: "assistant", content: text });
         saveMessage(userId, msg.channelName, "assistant", text);
         return { text };
       }
-
-      // Friendly message for any error — never show raw errors to user
-      const text = "Ой, что-то пошло не так. Попробуй ещё раз — я готова!";
-      history.push({ role: "assistant", content: text });
-      saveMessage(userId, msg.channelName, "assistant", text);
-      return { text };
     }
   }
 
