@@ -91,14 +91,14 @@ async function main() {
   tools.register(new ShellTool());
   tools.register(new SendFileTool());
   tools.register(new FilesTool());
-  tools.register(new HttpTool({ encryptionKey: config.security?.password_hash }));
+  const passwordHash = config.security?.password_hash ?? "default-key-change-me";
+  tools.register(new HttpTool({ encryptionKey: passwordHash }));
   tools.register(new BrowserTool());
   tools.register(memoryTool);
   tools.register(selfConfigTool);
   tools.register(scheduler.tool);
   tools.register(sshTool);
   tools.register(npmInstallTool);
-  const passwordHash = config.security?.password_hash ?? "default-key-change-me";
   // channels map is populated later — closure captures the reference
   const channels = new Map<string, Channel>();
   tools.register(new ConnectServiceTool({
@@ -171,7 +171,7 @@ async function main() {
     },
     tools,
     contextBudget: config.memory?.context_budget ?? 40000,
-    encryptionKey: config.security?.password_hash,
+    encryptionKey: passwordHash,
   }) : null;
 
   // Start HTTP server
