@@ -323,15 +323,21 @@ export class Engine {
       saveMessage(userId, msg.channelName, "assistant", text);
       return { text, mediaUrl: lastMediaUrl, mediaPath: lastMediaPath };
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error("Engine error:", errorMsg);
+
       if (err instanceof LLMUnavailableError) {
-        const text = "Извини, сейчас не могу ответить — все модели недоступны. Попробуй через пару минут.";
+        const text = "Секунду, что-то подвисла... Повтори, пожалуйста, через минутку 🙏";
         history.push({ role: "assistant", content: text });
         saveMessage(userId, msg.channelName, "assistant", text);
         return { text };
       }
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error("Engine error:", errorMsg);
-      return { text: `Ошибка: ${errorMsg}` };
+
+      // Friendly message for any error — never show raw errors to user
+      const text = "Ой, что-то пошло не так. Попробуй ещё раз — я готова!";
+      history.push({ role: "assistant", content: text });
+      saveMessage(userId, msg.channelName, "assistant", text);
+      return { text };
     }
   }
 
