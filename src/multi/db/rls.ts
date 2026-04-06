@@ -13,6 +13,9 @@ export async function withWorkspace<T>(
   const client = await pool.connect()
   try {
     await client.query('begin')
+    // Switch to non-superuser role so RLS actually applies.
+    // Superusers and BYPASSRLS roles bypass row security even with FORCE RLS.
+    await client.query(`set local role bc_app`)
     await client.query(`select set_config('app.workspace_id', $1, true)`, [workspaceId])
     const result = await fn(client)
     await client.query('commit')
