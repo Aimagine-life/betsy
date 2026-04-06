@@ -13,7 +13,7 @@ export async function withWorkspace<T>(
   const client = await pool.connect()
   try {
     await client.query('begin')
-    await client.query(`set local app.workspace_id = $1`, [workspaceId])
+    await client.query(`select set_config('app.workspace_id', $1, true)`, [workspaceId])
     const result = await fn(client)
     await client.query('commit')
     return result
