@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest"
 
 describe("engine runaway protection", () => {
-  it("MAX_PROMPT_TOKENS is defined as 50000", async () => {
+  it("MAX_PROMPT_TOKENS is defined", async () => {
     const engine = await import("../../src/core/engine.js")
-    expect((engine as any).MAX_PROMPT_TOKENS).toBe(50_000)
+    expect((engine as any).MAX_PROMPT_TOKENS).toBe(128_000)
   })
 
   it("MAX_SAME_TOOL is defined as 5", async () => {

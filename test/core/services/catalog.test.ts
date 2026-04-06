@@ -32,7 +32,8 @@ describe("Service catalog", () => {
     expect(gmailActions.length).toBeGreaterThan(0);
     const names = gmailActions.map(a => a.name);
     expect(names).toContain("list_messages");
-    expect(names).toContain("get_message");
+    expect(names).toContain("get_message_metadata");
+    expect(names).toContain("get_message_text");
     expect(names).toContain("send_message");
   });
 

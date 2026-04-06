@@ -44,7 +44,9 @@ describe("Engine", () => {
       text: "Hello",
       timestamp: Date.now(),
     });
-    expect(res.text).toContain("Ошибка");
+    // Engine returns a friendly natural-language fallback (no raw error exposed)
+    expect(res.text).toBeTruthy();
+    expect(res.text).not.toContain("API down");
   });
 
   it("executes tool calls in agentic loop", async () => {
