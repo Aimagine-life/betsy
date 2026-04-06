@@ -886,11 +886,14 @@ function SecurityTab({
           throw new Error("Неверный текущий пароль");
         }
       }
-      // Hash new password on server via wizard endpoint (reuse save config flow)
-      const { createHash } = await import("node:crypto").catch(() => ({ createHash: null }));
+      // Hash new password using Web Crypto API (browser-native)
       let passwordHash: string;
-      if (createHash) {
-        passwordHash = createHash("sha256").update(newPassword).digest("hex");
+      if (typeof window !== "undefined" && window.crypto?.subtle) {
+        const data = new TextEncoder().encode(newPassword);
+        const digest = await window.crypto.subtle.digest("SHA-256", data);
+        passwordHash = Array.from(new Uint8Array(digest))
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("");
       } else {
         // Fallback: send to server for hashing via wizard
         const wizRes = await fetch("/api/setup/wizard", {
