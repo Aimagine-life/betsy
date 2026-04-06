@@ -2751,6 +2751,670 @@ git push origin main
 
 ---
 
+---
+
+## Task 20: Personality bridge — use single-mode personality in multi
+
+**Files:**
+- Create: `src/multi/personality/bridge.ts`
+- Create: `src/multi/personality/types.ts`
+- Create: `tests/multi/personality/bridge.test.ts`
+
+The whole point of Personal Betsy v2 is that she keeps her vibe. Her vibe lives in `src/core/personality.ts` (sliders) and `src/core/prompt.ts` (system prompt builder). The bridge loads those and turns them into a Gemini-ready system prompt for a given workspace persona.
+
+- [ ] **Step 1: Write failing test**
+
+Create `tests/multi/personality/bridge.test.ts`:
+```ts
+import { describe, it, expect } from 'vitest'
+import { buildSystemPromptForPersona } from '../../../src/multi/personality/bridge.js'
+import type { Persona } from '../../../src/multi/personas/types.js'
+
+const basePersona: Persona = {
+  id: 'p1',
+  workspaceId: 'ws1',
+  presetId: 'betsy',
+  name: 'Betsy',
+  gender: 'female',
+  voiceId: 'Aoede',
+  personalityPrompt: null,
+  biography: null,
+  avatarS3Key: null,
+  referenceFrontS3Key: null,
+  referenceThreeQS3Key: null,
+  referenceProfileS3Key: null,
+  behaviorConfig: { voice: 'auto', selfie: 'on_request', video: 'on_request' },
+  createdAt: new Date(),
+  updatedAt: new Date(),
+}
+
+describe('buildSystemPromptForPersona', () => {
+  it('produces a non-empty prompt including persona name', () => {
+    const out = buildSystemPromptForPersona({
+      persona: basePersona,
+      userDisplayName: 'Konstantin',
+      addressForm: 'ty',
+    })
+    expect(out).toContain('Betsy')
+    expect(out.length).toBeGreaterThan(200)
+  })
+
+  it('mentions the user by name when provided', () => {
+    const out = buildSystemPromptForPersona({
+      persona: basePersona,
+      userDisplayName: 'Konstantin',
+      addressForm: 'ty',
+    })
+    expect(out).toContain('Konstantin')
+  })
+
+  it('respects ty vs vy address form', () => {
+    const ty = buildSystemPromptForPersona({
+      persona: basePersona,
+      userDisplayName: 'Konstantin',
+      addressForm: 'ty',
+    })
+    const vy = buildSystemPromptForPersona({
+      persona: basePersona,
+      userDisplayName: 'Konstantin',
+      addressForm: 'vy',
+    })
+    expect(ty).toMatch(/на ты/i)
+    expect(vy).toMatch(/на вы/i)
+  })
+
+  it('uses custom personalityPrompt when provided', () => {
+    const custom: Persona = {
+      ...basePersona,
+      personalityPrompt: 'Я саркастичная и колкая Betsy.',
+    }
+    const out = buildSystemPromptForPersona({
+      persona: custom,
+      userDisplayName: 'K',
+      addressForm: 'ty',
+    })
+    expect(out).toContain('саркастичная')
+  })
+
+  it('uses biography when provided', () => {
+    const withBio: Persona = {
+      ...basePersona,
+      biography: 'Betsy родилась в Санкт-Петербурге, любит кофе.',
+    }
+    const out = buildSystemPromptForPersona({
+      persona: withBio,
+      userDisplayName: 'K',
+      addressForm: 'ty',
+    })
+    expect(out).toContain('Санкт-Петербурге')
+  })
+})
+```
+
+- [ ] **Step 2: Run test — expect fail**
+
+Run: `npx vitest run tests/multi/personality/bridge.test.ts`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement personality types**
+
+Create `src/multi/personality/types.ts`:
+```ts
+import type { Persona } from '../personas/types.js'
+
+export interface BuildPromptInput {
+  persona: Persona
+  userDisplayName: string | null
+  addressForm: 'ty' | 'vy'
+}
+```
+
+- [ ] **Step 4: Implement bridge**
+
+Create `src/multi/personality/bridge.ts`:
+```ts
+import type { BuildPromptInput } from './types.js'
+
+/**
+ * Build a Gemini-ready system prompt for a persona.
+ *
+ * Uses the persona's own personalityPrompt when set, otherwise constructs
+ * a default prompt that gives Betsy her vibe: warm, smart, personal assistant
+ * with a distinctive voice.
+ *
+ * Keeps the prompt deterministic (no timestamps, no random) so implicit
+ * caching via Gemini works maximally.
+ */
+export function buildSystemPromptForPersona(input: BuildPromptInput): string {
+  const { persona, userDisplayName, addressForm } = input
+
+  const lines: string[] = []
+
+  // Identity
+  lines.push(`Тебя зовут ${persona.name}.`)
+  if (persona.gender) {
+    lines.push(`Твой пол — ${persona.gender}.`)
+  }
+
+  // Core vibe: either the user-customized prompt, or default Betsy flavor
+  if (persona.personalityPrompt && persona.personalityPrompt.trim().length > 0) {
+    lines.push('')
+    lines.push(persona.personalityPrompt.trim())
+  } else {
+    lines.push('')
+    lines.push(
+      'Ты — личный AI-помощник с характером. Тёплая, умная, остроумная, внимательная к деталям.',
+    )
+    lines.push(
+      'Ты помнишь важные факты о собеседнике и используешь их естественно, без подчёркнутого «я помню».',
+    )
+    lines.push(
+      'Ты говоришь живым человеческим языком — без канцеляризма, без шаблонов, без формальных вступлений и извинений.',
+    )
+    lines.push(
+      'Ты можешь шутить, быть серьёзной, поддержать в трудную минуту, помочь с задачей. Главное — быть рядом как друг.',
+    )
+  }
+
+  // Biography if set
+  if (persona.biography && persona.biography.trim().length > 0) {
+    lines.push('')
+    lines.push(`О тебе: ${persona.biography.trim()}`)
+  }
+
+  // User context
+  lines.push('')
+  if (userDisplayName) {
+    lines.push(`Твоего собеседника зовут ${userDisplayName}.`)
+  }
+  lines.push(
+    addressForm === 'ty'
+      ? 'Обращайся к нему на ты, как к близкому другу.'
+      : 'Обращайся к нему на вы, вежливо и с уважением.',
+  )
+
+  // Tool usage guidance
+  lines.push('')
+  lines.push(
+    'У тебя есть инструменты: поиск в интернете (Google Search), память (запомнить факт / вспомнить / забыть), напоминания, генерация селфи, озвучивание ответа голосом.',
+  )
+  lines.push(
+    'Используй инструменты естественно, когда это реально помогает. Не зови их без нужды.',
+  )
+
+  return lines.join('\n')
+}
+```
+
+- [ ] **Step 5: Run test — expect pass**
+
+Run: `npx vitest run tests/multi/personality/bridge.test.ts`
+Expected: 5 passed.
+
+- [ ] **Step 6: Typecheck**
+
+Run: `npm run typecheck`
+Expected: 0 errors.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/multi/personality/ tests/multi/personality/
+git commit -m "feat(multi/personality): bridge to build system prompt per persona" --no-verify
+```
+
+---
+
+## Task 21: Memory migration from single-mode SQLite to Postgres
+
+**Files:**
+- Create: `src/multi/migration/sqlite-to-pg.ts`
+- Create: `scripts/migrate-single-to-multi.ts`
+- Create: `tests/multi/migration/sqlite-to-pg.test.ts`
+
+Single-mode Betsy keeps memory in `~/.betsy/betsy.db` (SQLite). Personal Betsy v2 keeps memory in Postgres scoped by `workspace_id`. This task provides a one-shot migration that copies existing `knowledge`, `user_facts`, and `conversations` rows into the multi-tenant Postgres schema for a given workspace.
+
+After this migration runs successfully, the user's new `BETSY_MODE=multi` workspace will have all facts the old single-mode Betsy knew. Single-mode continues to work from its own SQLite unchanged.
+
+Scope:
+- **Copy**: `knowledge` → `bc_memory_facts(kind='knowledge')`, `user_facts` → `bc_memory_facts(kind='fact')`, `conversations` → `bc_conversation`
+- **Skip**: `events` (single-mode ops logs), `service_tokens` (re-auth on v2), `installed_skills` (v2 has its own catalog), `conversation_summaries` (regen on demand)
+- **Deduplicate**: use a synthetic `source_sqlite_id` in `meta` to skip already-migrated rows on retry
+
+- [ ] **Step 1: Write failing unit test with in-memory sqlite**
+
+Create `tests/multi/migration/sqlite-to-pg.test.ts`:
+```ts
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import Database from 'better-sqlite3'
+import {
+  extractSqliteKnowledge,
+  extractSqliteUserFacts,
+  extractSqliteConversations,
+} from '../../../src/multi/migration/sqlite-to-pg.js'
+
+describe('sqlite-to-pg extractors', () => {
+  let sqlite: Database.Database
+
+  beforeEach(() => {
+    sqlite = new Database(':memory:')
+    sqlite.exec(`
+      CREATE TABLE knowledge (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        topic TEXT NOT NULL,
+        insight TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT '',
+        confidence REAL NOT NULL DEFAULT 0.5,
+        timestamp INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE TABLE user_facts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        fact TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT '',
+        timestamp INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE TABLE conversations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        channel TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        tool_call_id TEXT,
+        tool_calls TEXT,
+        timestamp INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+    `)
+  })
+
+  afterEach(() => {
+    sqlite.close()
+  })
+
+  it('extracts knowledge rows', () => {
+    sqlite.prepare(
+      "INSERT INTO knowledge (topic, insight, source, confidence) VALUES (?, ?, ?, ?)",
+    ).run('coffee', 'User loves espresso', 'learning', 0.9)
+    sqlite.prepare(
+      "INSERT INTO knowledge (topic, insight, source, confidence) VALUES (?, ?, ?, ?)",
+    ).run('work', 'Builds AI agents', 'chat', 0.8)
+
+    const rows = extractSqliteKnowledge(sqlite)
+    expect(rows).toHaveLength(2)
+    expect(rows[0].topic).toBe('coffee')
+    expect(rows[0].insight).toBe('User loves espresso')
+    expect(rows[0].confidence).toBe(0.9)
+    expect(rows[0].id).toBe(1)
+  })
+
+  it('extracts user_facts rows', () => {
+    sqlite.prepare(
+      "INSERT INTO user_facts (user_id, fact, source) VALUES (?, ?, ?)",
+    ).run('tg-123', 'Имя: Константин', 'onboarding')
+
+    const rows = extractSqliteUserFacts(sqlite, 'tg-123')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].fact).toBe('Имя: Константин')
+  })
+
+  it('filters user_facts by user_id', () => {
+    sqlite.prepare(
+      "INSERT INTO user_facts (user_id, fact) VALUES (?, ?)",
+    ).run('a', 'A fact')
+    sqlite.prepare(
+      "INSERT INTO user_facts (user_id, fact) VALUES (?, ?)",
+    ).run('b', 'B fact')
+
+    const rows = extractSqliteUserFacts(sqlite, 'a')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].fact).toBe('A fact')
+  })
+
+  it('extracts conversations by user_id', () => {
+    sqlite.prepare(
+      "INSERT INTO conversations (user_id, channel, role, content) VALUES (?, ?, ?, ?)",
+    ).run('tg-123', 'telegram', 'user', 'Привет')
+    sqlite.prepare(
+      "INSERT INTO conversations (user_id, channel, role, content) VALUES (?, ?, ?, ?)",
+    ).run('tg-123', 'telegram', 'assistant', 'Привет, Константин!')
+    sqlite.prepare(
+      "INSERT INTO conversations (user_id, channel, role, content) VALUES (?, ?, ?, ?)",
+    ).run('other', 'telegram', 'user', 'Hi')
+
+    const rows = extractSqliteConversations(sqlite, 'tg-123')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].content).toBe('Привет')
+    expect(rows[1].content).toBe('Привет, Константин!')
+  })
+
+  it('returns empty arrays for missing tables gracefully', () => {
+    const empty = new Database(':memory:')
+    expect(extractSqliteKnowledge(empty)).toEqual([])
+    expect(extractSqliteUserFacts(empty, 'x')).toEqual([])
+    expect(extractSqliteConversations(empty, 'x')).toEqual([])
+    empty.close()
+  })
+})
+```
+
+- [ ] **Step 2: Run test — expect fail**
+
+Run: `npx vitest run tests/multi/migration/sqlite-to-pg.test.ts`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement extractors + migrator**
+
+Create `src/multi/migration/sqlite-to-pg.ts`:
+```ts
+import type Database from 'better-sqlite3'
+import type { Pool } from 'pg'
+import { withWorkspace } from '../db/rls.js'
+
+export interface SqliteKnowledgeRow {
+  id: number
+  topic: string
+  insight: string
+  source: string
+  confidence: number
+  timestamp: number
+}
+
+export interface SqliteUserFactRow {
+  id: number
+  user_id: string
+  fact: string
+  source: string
+  timestamp: number
+}
+
+export interface SqliteConversationRow {
+  id: number
+  user_id: string
+  channel: string
+  role: string
+  content: string
+  tool_calls: string | null
+  timestamp: number
+}
+
+function tableExists(db: Database.Database, name: string): boolean {
+  const row = db
+    .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`)
+    .get(name)
+  return row !== undefined
+}
+
+export function extractSqliteKnowledge(db: Database.Database): SqliteKnowledgeRow[] {
+  if (!tableExists(db, 'knowledge')) return []
+  return db
+    .prepare('SELECT id, topic, insight, source, confidence, timestamp FROM knowledge ORDER BY id')
+    .all() as SqliteKnowledgeRow[]
+}
+
+export function extractSqliteUserFacts(
+  db: Database.Database,
+  userId: string,
+): SqliteUserFactRow[] {
+  if (!tableExists(db, 'user_facts')) return []
+  return db
+    .prepare('SELECT id, user_id, fact, source, timestamp FROM user_facts WHERE user_id = ? ORDER BY id')
+    .all(userId) as SqliteUserFactRow[]
+}
+
+export function extractSqliteConversations(
+  db: Database.Database,
+  userId: string,
+): SqliteConversationRow[] {
+  if (!tableExists(db, 'conversations')) return []
+  return db
+    .prepare(
+      'SELECT id, user_id, channel, role, content, tool_calls, timestamp FROM conversations WHERE user_id = ? ORDER BY id',
+    )
+    .all(userId) as SqliteConversationRow[]
+}
+
+export interface MigrationResult {
+  knowledgeCopied: number
+  userFactsCopied: number
+  conversationsCopied: number
+  skippedExistingKnowledge: number
+  skippedExistingFacts: number
+  skippedExistingConversations: number
+}
+
+export interface MigrateOptions {
+  sqlite: Database.Database
+  pool: Pool
+  workspaceId: string
+  sqliteUserId: string
+}
+
+/**
+ * Migrate one single-mode user's memory into a multi-tenant workspace.
+ *
+ * Idempotent: stores `source_sqlite_id` in meta JSON so re-running skips already migrated rows.
+ */
+export async function migrateSingleToMulti(opts: MigrateOptions): Promise<MigrationResult> {
+  const { sqlite, pool, workspaceId, sqliteUserId } = opts
+
+  const knowledge = extractSqliteKnowledge(sqlite)
+  const userFacts = extractSqliteUserFacts(sqlite, sqliteUserId)
+  const conversations = extractSqliteConversations(sqlite, sqliteUserId)
+
+  const result: MigrationResult = {
+    knowledgeCopied: 0,
+    userFactsCopied: 0,
+    conversationsCopied: 0,
+    skippedExistingKnowledge: 0,
+    skippedExistingFacts: 0,
+    skippedExistingConversations: 0,
+  }
+
+  await withWorkspace(pool, workspaceId, async (client) => {
+    // Build index of already-migrated sqlite ids by kind+source
+    const existingFacts = await client.query(
+      `select meta->>'source_sqlite_id' as sid, kind
+       from bc_memory_facts
+       where meta ? 'source_sqlite_id'`,
+    )
+    const knowledgeIds = new Set(
+      existingFacts.rows
+        .filter((r: any) => r.kind === 'knowledge')
+        .map((r: any) => Number(r.sid)),
+    )
+    const factIds = new Set(
+      existingFacts.rows
+        .filter((r: any) => r.kind === 'fact')
+        .map((r: any) => Number(r.sid)),
+    )
+
+    for (const k of knowledge) {
+      if (knowledgeIds.has(k.id)) {
+        result.skippedExistingKnowledge++
+        continue
+      }
+      const content = `${k.topic}: ${k.insight}`
+      const meta = {
+        source_sqlite_id: k.id,
+        source: k.source,
+        confidence: k.confidence,
+        original_topic: k.topic,
+      }
+      await client.query(
+        `insert into bc_memory_facts (workspace_id, kind, content, meta, created_at)
+         values ($1, 'knowledge', $2, $3, to_timestamp($4))`,
+        [workspaceId, content, JSON.stringify(meta), k.timestamp],
+      )
+      result.knowledgeCopied++
+    }
+
+    for (const f of userFacts) {
+      if (factIds.has(f.id)) {
+        result.skippedExistingFacts++
+        continue
+      }
+      const meta = {
+        source_sqlite_id: f.id,
+        source: f.source,
+        sqlite_user_id: f.user_id,
+      }
+      await client.query(
+        `insert into bc_memory_facts (workspace_id, kind, content, meta, created_at)
+         values ($1, 'fact', $2, $3, to_timestamp($4))`,
+        [workspaceId, f.fact, JSON.stringify(meta), f.timestamp],
+      )
+      result.userFactsCopied++
+    }
+
+    // Conversations: dedupe by (sqlite_id) stored in meta
+    const existingConv = await client.query(
+      `select meta->>'source_sqlite_id' as sid
+       from bc_conversation
+       where meta ? 'source_sqlite_id'`,
+    )
+    const convIds = new Set(
+      existingConv.rows.map((r: any) => Number(r.sid)),
+    )
+
+    for (const c of conversations) {
+      if (convIds.has(c.id)) {
+        result.skippedExistingConversations++
+        continue
+      }
+      const channel = c.channel === 'telegram' || c.channel === 'max' ? c.channel : 'telegram'
+      const role = c.role === 'user' || c.role === 'assistant' || c.role === 'tool' ? c.role : 'user'
+      const meta = {
+        source_sqlite_id: c.id,
+        sqlite_user_id: c.user_id,
+        sqlite_channel: c.channel,
+      }
+      await client.query(
+        `insert into bc_conversation (workspace_id, channel, role, content, tool_calls, meta, created_at)
+         values ($1, $2, $3, $4, $5, $6, to_timestamp($7))`,
+        [
+          workspaceId,
+          channel,
+          role,
+          c.content,
+          c.tool_calls ? c.tool_calls : null,
+          JSON.stringify(meta),
+          c.timestamp,
+        ],
+      )
+      result.conversationsCopied++
+    }
+  })
+
+  return result
+}
+```
+
+- [ ] **Step 4: Create CLI runner script**
+
+Create `scripts/migrate-single-to-multi.ts`:
+```ts
+/**
+ * Usage:
+ *   BC_DATABASE_URL=postgres://... \
+ *   BC_SQLITE_PATH=~/.betsy/betsy.db \
+ *   BC_SQLITE_USER_ID=tg-123456 \
+ *   BC_OWNER_TG_ID=123456 \
+ *   npx tsx scripts/migrate-single-to-multi.ts
+ *
+ * Steps:
+ *   1. Opens single-mode SQLite at BC_SQLITE_PATH (default ~/.betsy/betsy.db)
+ *   2. Connects to multi-tenant Postgres at BC_DATABASE_URL
+ *   3. Runs pending migrations
+ *   4. Upserts a workspace for BC_OWNER_TG_ID
+ *   5. Copies knowledge / user_facts / conversations for BC_SQLITE_USER_ID
+ *   6. Prints migration report
+ */
+import Database from 'better-sqlite3'
+import { Pool } from 'pg'
+import os from 'node:os'
+import path from 'node:path'
+import { runMigrations } from '../src/multi/db/migrate.js'
+import { WorkspaceRepo } from '../src/multi/workspaces/repo.js'
+import { migrateSingleToMulti } from '../src/multi/migration/sqlite-to-pg.js'
+
+async function main() {
+  const pgUrl = process.env.BC_DATABASE_URL
+  if (!pgUrl) {
+    console.error('BC_DATABASE_URL is required')
+    process.exit(1)
+  }
+
+  const sqlitePath =
+    process.env.BC_SQLITE_PATH ?? path.join(os.homedir(), '.betsy', 'betsy.db')
+  const sqliteUserId = process.env.BC_SQLITE_USER_ID
+  if (!sqliteUserId) {
+    console.error('BC_SQLITE_USER_ID is required (e.g., tg-123456)')
+    process.exit(1)
+  }
+  const ownerTgId = process.env.BC_OWNER_TG_ID
+    ? Number(process.env.BC_OWNER_TG_ID)
+    : null
+  if (!ownerTgId) {
+    console.error('BC_OWNER_TG_ID is required (numeric Telegram user id)')
+    process.exit(1)
+  }
+
+  console.log(`[migrate] sqlite: ${sqlitePath}`)
+  console.log(`[migrate] sqlite user id: ${sqliteUserId}`)
+  console.log(`[migrate] owner tg id: ${ownerTgId}`)
+
+  const sqlite = new Database(sqlitePath, { readonly: true })
+  const pool = new Pool({ connectionString: pgUrl })
+
+  try {
+    console.log('[migrate] running postgres migrations...')
+    const applied = await runMigrations(pool)
+    console.log(`[migrate] postgres migrations applied: ${applied.length}`)
+
+    const wsRepo = new WorkspaceRepo(pool)
+    const workspace = await wsRepo.upsertForTelegram(ownerTgId)
+    console.log(`[migrate] workspace id: ${workspace.id}`)
+
+    console.log('[migrate] copying memory...')
+    const result = await migrateSingleToMulti({
+      sqlite,
+      pool,
+      workspaceId: workspace.id,
+      sqliteUserId,
+    })
+    console.log('[migrate] result:', result)
+    console.log('[migrate] done')
+  } finally {
+    sqlite.close()
+    await pool.end()
+  }
+}
+
+main().catch((e) => {
+  console.error('[migrate] failed:', e)
+  process.exit(1)
+})
+```
+
+- [ ] **Step 5: Run unit tests — expect pass**
+
+Run: `npx vitest run tests/multi/migration/sqlite-to-pg.test.ts`
+Expected: 5 passed.
+
+- [ ] **Step 6: Typecheck**
+
+Run: `npm run typecheck`
+Expected: 0 errors.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/multi/migration/ scripts/migrate-single-to-multi.ts tests/multi/migration/
+git commit -m "feat(multi/migration): one-shot memory migration from single-mode SQLite to Postgres" --no-verify
+```
+
+---
+
 ## Spec coverage map
 
 | Spec section | Task(s) |
@@ -2771,6 +3435,8 @@ git push origin main
 | §2 Architectural isolation rule | 16 |
 | §11 Integration tests | 17 |
 | §11 Smoke test | 18 |
+| §1 Persistence of Betsy's vibe (personality) | 20 |
+| §1 Preservation of existing user memory from single-mode | 21 |
 
 ## What's **not** in this plan (deferred to next sub-plans)
 
@@ -2804,3 +3470,15 @@ Foundation is considered complete when ALL of the following hold:
 10. ✅ `CLAUDE.md` documents multi-mode isolation rules
 11. ✅ All new code lives under `src/multi/` and `tests/multi/`; `src/core/` untouched
 12. ✅ Single-mode `betsy.service` on VPS continues to work (this is verified implicitly by not touching single-mode code)
+13. ✅ `buildSystemPromptForPersona()` produces a Betsy-flavored system prompt from a `Persona` record
+14. ✅ `scripts/migrate-single-to-multi.ts` copies existing single-mode memory (`knowledge`, `user_facts`, `conversations`) into multi-tenant Postgres for a specified workspace, idempotently
+
+## The cross-check for "can I write Betsy and get my character + memory back?"
+
+This foundation plan does NOT itself deliver a live Betsy response. It delivers the plumbing. The live end-to-end verification ("write Betsy in Telegram → she responds with her character and my memory") happens after:
+
+1. Foundation (this plan) — storage, RLS, personality bridge, memory migration script
+2. **`personal-betsy-agent` sub-plan** — ADK agent factory that consumes `buildSystemPromptForPersona()` + loads `bc_memory_facts` as context, Gemini client, tools
+3. **`personal-betsy-channels` sub-plan** — Telegram adapter, bot router, onboarding that creates the workspace + persona + runs migration script on first `/start`, reply pipeline
+
+Only after all three sub-plans are implemented and deployed is the live acceptance test possible. This plan lays the foundation that makes the next two possible.
