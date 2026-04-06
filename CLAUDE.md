@@ -45,3 +45,15 @@ npm test             # Run tests (vitest)
 
 - Project UI and logs are in Russian
 - Code and comments are in English
+
+## Personal Betsy v2 — multi-tenant mode
+
+- `BETSY_MODE=multi` dispatches to `src/multi/server.ts` (Personal Betsy v2 SaaS).
+- `src/core/*` and `src/channels/*` are **single-mode only** — they must stay pure and not know about `workspace_id`.
+- `src/multi/*` may import from `src/core/*` but never vice-versa.
+- All multi-tenant DB access goes through `withWorkspace(pool, workspaceId, fn)` from `src/multi/db/rls.ts`. Postgres Row-Level Security enforces isolation at the database level.
+- `asAdmin(pool, fn)` bypasses RLS only for system operations (creating new workspaces, billing reconciliation). Never pass user input as workspace_id to `asAdmin`.
+- Env vars for multi-mode: `BC_*` prefix. Single-mode env stays as is.
+- New runtime deps for multi live under `src/multi/` only.
+- Tests for multi live in `tests/multi/` mirror structure of `src/multi/`.
+- Integration tests (against real Postgres) are gated on `BC_TEST_DATABASE_URL` env var and skip otherwise.
