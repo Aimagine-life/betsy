@@ -26,6 +26,7 @@ import { SkillSearchTool } from "./core/tools/skill-search.js";
 import { SkillInstallTool } from "./core/tools/skill-install.js";
 import { SendFileTool } from "./core/tools/send-file.js";
 import { ConnectServiceTool } from "./core/tools/connect-service.js";
+import { pickEntry } from "./mode.js";
 
 function getAddress(): string {
   const nets = os.networkInterfaces();
@@ -38,6 +39,12 @@ function getAddress(): string {
 }
 
 async function main() {
+  if (pickEntry(process.env) === 'multi') {
+    const { startMultiServer } = await import('./multi/server.js');
+    await startMultiServer();
+    return;
+  }
+
   const port = 3777;
   const address = getAddress();
 
