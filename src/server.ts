@@ -170,7 +170,7 @@ function serveStatic(pathname: string, res: http.ServerResponse) {
 // ---------------------------------------------------------------------------
 
 /** Routes that do NOT require JWT */
-const PUBLIC_ROUTES = new Set(["/api/auth", "/api/setup/status", "/api/status"]);
+const PUBLIC_ROUTES = new Set(["/api/auth", "/api/setup/status"]);
 
 /** POST /api/config is public during wizard (setup mode) */
 function isPublicRoute(pathname: string, method: string, ctx: ServerContext): boolean {

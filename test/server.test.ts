@@ -1,7 +1,18 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, beforeAll, afterAll } from "vitest";
 import { createServer, type ServerHandle } from "../src/server.js";
 
 let handle: ServerHandle | null = null;
+const prevConfigPath = process.env.BETSY_CONFIG_PATH;
+
+beforeAll(() => {
+  // Force loadConfig() to return null (no config) by pointing at a non-existent file
+  process.env.BETSY_CONFIG_PATH = "/__nonexistent__/betsy-test-config.yaml";
+});
+
+afterAll(() => {
+  if (prevConfigPath === undefined) delete process.env.BETSY_CONFIG_PATH;
+  else process.env.BETSY_CONFIG_PATH = prevConfigPath;
+});
 
 afterEach(() => {
   if (handle) {

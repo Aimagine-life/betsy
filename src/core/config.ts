@@ -111,7 +111,7 @@ export function getConfigDir(): string {
 }
 
 export function getConfigPath(customPath?: string): string {
-  return customPath ?? path.join(getConfigDir(), "config.yaml");
+  return customPath ?? process.env.BETSY_CONFIG_PATH ?? path.join(getConfigDir(), "config.yaml");
 }
 
 /**
