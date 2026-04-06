@@ -116,11 +116,12 @@ export function getDB(dbPath?: string): Database.Database {
       )`);
     } else {
       // Has channel but missing user_id/tool columns — ALTER TABLE
-      db.transaction(() => {
-        if (!colNames.includes("user_id")) db.prepare("ALTER TABLE conversations ADD COLUMN user_id TEXT NOT NULL DEFAULT ''").run();
-        if (!colNames.includes("tool_call_id")) db.prepare("ALTER TABLE conversations ADD COLUMN tool_call_id TEXT").run();
-        if (!colNames.includes("tool_calls")) db.prepare("ALTER TABLE conversations ADD COLUMN tool_calls TEXT").run();
-        db.prepare("DELETE FROM conversations WHERE user_id = ''").run();
+      const conn = db;
+      conn.transaction(() => {
+        if (!colNames.includes("user_id")) conn.prepare("ALTER TABLE conversations ADD COLUMN user_id TEXT NOT NULL DEFAULT ''").run();
+        if (!colNames.includes("tool_call_id")) conn.prepare("ALTER TABLE conversations ADD COLUMN tool_call_id TEXT").run();
+        if (!colNames.includes("tool_calls")) conn.prepare("ALTER TABLE conversations ADD COLUMN tool_calls TEXT").run();
+        conn.prepare("DELETE FROM conversations WHERE user_id = ''").run();
       })();
     }
   }

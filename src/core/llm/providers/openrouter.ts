@@ -13,14 +13,16 @@ function toOpenAIMessages(messages: LLMMessage[]): OpenAI.ChatCompletionMessageP
       return {
         role: "tool" as const,
         tool_call_id: m.toolCallId!,
-        content: m.content,
+        content: typeof m.content === "string"
+          ? m.content
+          : m.content.filter((p) => p.type === "text").map((p) => (p as { text: string }).text).join("\n"),
       };
     }
 
     if (m.role === "assistant" && m.toolCalls?.length) {
       return {
         role: "assistant" as const,
-        content: m.content || null,
+        content: typeof m.content === "string" ? m.content : null,
         tool_calls: m.toolCalls.map((tc) => ({
           id: tc.id,
           type: "function" as const,
