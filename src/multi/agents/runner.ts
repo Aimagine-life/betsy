@@ -11,6 +11,8 @@ import { createReminderTools } from './tools/reminder-tools.js'
 import { createSelfieTool } from './tools/selfie-tool.js'
 import { createWebSearchTool } from './tools/web-search-tool.js'
 import { createBetsyAgent } from './betsy-factory.js'
+import { createRunContext } from './run-context.js'
+import { createRecallTools } from './tools/recall-tools.js'
 import { speak as realSpeak } from '../gemini/tts.js'
 import { runWithGeminiToolsStream } from './gemini-runner.js'
 import { log } from '../observability/logger.js'
@@ -153,6 +155,8 @@ export interface RunBetsyInput {
    *  Used to bypass history-poisoning when the user clearly asks for a specific
    *  action (e.g. selfie) and we don't want the model to "rationalize" a refusal. */
   forceTool?: string
+  /** Chat-id of the current inbound message (required for recall + chat_id plumbing). */
+  currentChatId: string
 }
 
 export interface BetsyResponse {
@@ -160,6 +164,11 @@ export interface BetsyResponse {
   audio?: { base64: string; mimeType: string }
   toolCalls: unknown[]
   tokensUsed: number
+  /** Set by set_reply_target tool — outgoing reply should quote this message id. */
+  replyTo?: number
+  /** bc_conversation.id of the just-persisted assistant row, so the caller can
+   *  update it with the outbound external_message_id once the channel send returns. */
+  assistantRowId?: string
 }
 
 export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
@@ -171,6 +180,8 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
 
   const persona = await deps.personaRepo.findByWorkspace(workspaceId)
   if (!persona) throw new Error(`persona not found for workspace: ${workspaceId}`)
+
+  const runContext = createRunContext()
 
   const context = await loadAgentContext({
     factsRepo: deps.factsRepo,
@@ -201,12 +212,20 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
     workspaceId,
   })
   const webSearchTool = createWebSearchTool(deps.gemini)
+  const recallTools = createRecallTools({
+    convRepo: deps.convRepo,
+    gemini: deps.gemini,
+    workspaceId,
+    currentChatId: input.currentChatId,
+    currentChannel: channel,
+    runContext,
+  })
 
   const agent = createBetsyAgent({
     workspace,
     persona,
     ownerFacts: context.factContents,
-    tools: { memoryTools, reminderTools, selfieTool, webSearchTool },
+    tools: { memoryTools, reminderTools, selfieTool, webSearchTool, recallTools },
     currentChannel: channel,
   })
 
@@ -219,7 +238,8 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
         channel,
         role: 'user',
         content: userMessage,
-      } as any)
+        chatId: input.currentChatId,
+      })
       log().info('runBetsy: user message appended', { workspaceId })
     } catch (e) {
       log().error('runBetsy: append user failed', {
@@ -249,15 +269,18 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
   }
 
   // Store assistant reply
+  let assistantRowId: string | undefined
   try {
-    await deps.convRepo.append(workspaceId, {
+    const row = await deps.convRepo.append(workspaceId, {
       channel,
       role: 'assistant',
       content: result.text,
       toolCalls: result.toolCalls,
       tokensUsed: result.tokensUsed,
-    } as any)
-    log().info('runBetsy: assistant message appended', { workspaceId })
+      chatId: input.currentChatId,
+    })
+    assistantRowId = row.id
+    log().info('runBetsy: assistant message appended', { workspaceId, rowId: row.id })
   } catch (e) {
     log().error('runBetsy: append assistant failed', {
       workspaceId,
@@ -292,6 +315,8 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
     audio,
     toolCalls: result.toolCalls,
     tokensUsed: result.tokensUsed,
+    replyTo: runContext.replyTarget,
+    assistantRowId,
   }
 }
 
@@ -300,7 +325,13 @@ export interface RunBetsyStreamResult {
    *  that support streaming (e.g. Telegram sendMessageDraft). */
   textStream: AsyncIterable<string>
   /** Resolves once the assistant message has been fully generated and persisted. */
-  done: Promise<{ text: string; toolCalls: unknown[]; tokensUsed: number }>
+  done: Promise<{ text: string; toolCalls: unknown[]; tokensUsed: number; replyTo?: number }>
+  /** Resolves (same as `done`) with just the reply target, for the channel
+   *  adapter's streamMessage to await before its final send. */
+  replyToPromise: Promise<number | undefined>
+  /** The bc_conversation row id of the assistant message once it has been
+   *  persisted. */
+  assistantRowIdPromise: Promise<string | undefined>
 }
 
 /**
@@ -322,6 +353,8 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
 
   const persona = await deps.personaRepo.findByWorkspace(workspaceId)
   if (!persona) throw new Error(`persona not found for workspace: ${workspaceId}`)
+
+  const runContext = createRunContext()
 
   const context = await loadAgentContext({
     factsRepo: deps.factsRepo,
@@ -352,12 +385,20 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
     workspaceId,
   })
   const webSearchTool = createWebSearchTool(deps.gemini)
+  const recallTools = createRecallTools({
+    convRepo: deps.convRepo,
+    gemini: deps.gemini,
+    workspaceId,
+    currentChatId: input.currentChatId,
+    currentChannel: channel,
+    runContext,
+  })
 
   const agent = createBetsyAgent({
     workspace,
     persona,
     ownerFacts: context.factContents,
-    tools: { memoryTools, reminderTools, selfieTool, webSearchTool },
+    tools: { memoryTools, reminderTools, selfieTool, webSearchTool, recallTools },
     currentChannel: channel,
   })
 
@@ -375,7 +416,8 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
         channel,
         role: 'user',
         content: userMessage,
-      } as any)
+        chatId: input.currentChatId,
+      })
     } catch (e) {
       log().error('runBetsyStream: append user failed', {
         workspaceId,
@@ -403,40 +445,67 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
     },
   }
 
+  // Two resolvers exposed so the channel adapter can await the reply target
+  // before its final send.
+  let resolveReply!: (v: number | undefined) => void
+  let resolveRowId!: (v: string | undefined) => void
+  const replyToPromise: Promise<number | undefined> = new Promise((r) => {
+    resolveReply = r
+  })
+  const assistantRowIdPromise: Promise<string | undefined> = new Promise((r) => {
+    resolveRowId = r
+  })
+
   const done = (async () => {
-    const result = await finalize()
+    let result: { text: string; toolCalls: unknown[]; tokensUsed: number }
+    try {
+      result = await finalize()
+    } catch (e) {
+      resolveReply(undefined)
+      resolveRowId(undefined)
+      throw e
+    }
+    // Agent loop is done — the reply target is now stable.
+    resolveReply(runContext.replyTarget)
+
     log().info('runBetsyStream: agent done', {
       workspaceId,
       textLen: result.text?.length ?? 0,
       toolCalls: Array.isArray(result.toolCalls) ? result.toolCalls.length : 0,
       tokensUsed: result.tokensUsed,
+      replyTo: runContext.replyTarget,
     })
+
+    let assistantRowId: string | undefined
     try {
-      await deps.convRepo.append(workspaceId, {
+      const row = await deps.convRepo.append(workspaceId, {
         channel,
         role: 'assistant',
         content: result.text,
         toolCalls: result.toolCalls,
         tokensUsed: result.tokensUsed,
-      } as any)
+        chatId: input.currentChatId,
+      })
+      assistantRowId = row.id
     } catch (e) {
       log().error('runBetsyStream: append assistant failed', {
         workspaceId,
         error: e instanceof Error ? e.message : String(e),
       })
     }
-    // Background: rolling-window summarization (don't block reply)
+    resolveRowId(assistantRowId)
+
     fireAndForgetSummarize(deps, workspaceId)
-    // Background: passive fact extraction from this exchange
     fireAndForgetExtract(deps, workspaceId, userMessage, result.text)
-    // Background: backfill embeddings for any facts that are missing them
     fireAndForgetBackfillEmbeddings(deps, workspaceId)
+
     return {
       text: result.text,
       toolCalls: result.toolCalls,
       tokensUsed: result.tokensUsed,
+      replyTo: runContext.replyTarget,
     }
   })()
 
-  return { textStream: wrappedStream, done }
+  return { textStream: wrappedStream, done, replyToPromise, assistantRowIdPromise }
 }

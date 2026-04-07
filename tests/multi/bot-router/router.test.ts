@@ -57,8 +57,8 @@ function mockDeps(overrides: any = {}) {
     }),
     runBetsyDeps: {} as any,
     channels: {
-      telegram: { sendMessage: vi.fn(), sendTyping: vi.fn(), name: 'telegram' } as any,
-      max: { sendMessage: vi.fn(), sendTyping: vi.fn(), name: 'max' } as any,
+      telegram: { sendMessage: vi.fn().mockResolvedValue({}), sendTyping: vi.fn(), name: 'telegram' } as any,
+      max: { sendMessage: vi.fn().mockResolvedValue({}), sendTyping: vi.fn(), name: 'max' } as any,
     },
     ...overrides,
   }

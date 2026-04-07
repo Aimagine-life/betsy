@@ -393,24 +393,42 @@ export class BotRouter {
           try {
             if (canStream) {
               log().info('routing: runBetsyStream attempt', { workspaceId: workspace.id, attempt })
-              const { textStream, done } = await this.deps.runBetsyStreamFn!({
-                workspaceId: workspace.id,
-                userMessage: ev.text,
-                channel: ev.channel,
-                deps: this.deps.runBetsyDeps,
-                skipAppendUser: true,
-                forceTool,
-              })
+              const { textStream, done, replyToPromise, assistantRowIdPromise } =
+                await this.deps.runBetsyStreamFn!({
+                  workspaceId: workspace.id,
+                  userMessage: ev.text,
+                  channel: ev.channel,
+                  deps: this.deps.runBetsyDeps,
+                  skipAppendUser: true,
+                  currentChatId: ev.chatId,
+                  forceTool,
+                })
               // Race the whole streaming turn against the timeout. If timeout
               // hits, both streamMessage and done are abandoned. streamMessage
               // will NOT finalize the partial draft (see telegram.ts), so the
               // user sees nothing — clean for retry.
               const turnPromise = (async () => {
-                await channel.streamMessage!({ chatId: ev.chatId, textStream })
-                return done
+                const sendResult = await channel.streamMessage!({
+                  chatId: ev.chatId,
+                  textStream,
+                  replyToPromise,
+                })
+                const d = await done
+                const rowId = await assistantRowIdPromise
+                if (sendResult.externalMessageId != null && rowId && this.deps.convRepo) {
+                  await this.deps.convRepo
+                    .setExternalMessageId(workspace.id, rowId, sendResult.externalMessageId)
+                    .catch((e) =>
+                      log().warn('bot-router(stream): setExternalMessageId failed', {
+                        workspaceId: workspace.id,
+                        error: e instanceof Error ? e.message : String(e),
+                      }),
+                    )
+                }
+                return d
               })()
               const result = await withTimeout(
-                turnPromise.then((d) => d),
+                turnPromise,
                 ATTEMPT_TIMEOUT_MS,
                 'runBetsyStream',
               )
@@ -419,6 +437,7 @@ export class BotRouter {
                 attempt,
                 textLen: result.text?.length ?? 0,
                 toolCalls: Array.isArray(result.toolCalls) ? result.toolCalls.length : 0,
+                replyTo: result.replyTo,
               })
             } else {
               log().info('routing: runBetsy attempt', { workspaceId: workspace.id, attempt })
@@ -429,6 +448,7 @@ export class BotRouter {
                   channel: ev.channel,
                   deps: this.deps.runBetsyDeps,
                   skipAppendUser: true,
+                  currentChatId: ev.chatId,
                   forceTool,
                 }),
                 ATTEMPT_TIMEOUT_MS,
@@ -440,15 +460,31 @@ export class BotRouter {
                 textLen: response.text?.length ?? 0,
                 hasAudio: Boolean(response.audio),
                 toolCalls: Array.isArray(response.toolCalls) ? response.toolCalls.length : 0,
+                replyTo: response.replyTo,
               })
-              await channel.sendMessage({
+              const sendResult = await channel.sendMessage({
                 chatId: ev.chatId,
                 text: response.text,
                 audio: response.audio && {
                   base64: response.audio.base64,
                   mimeType: response.audio.mimeType,
                 },
+                replyToMessageId: response.replyTo != null ? String(response.replyTo) : undefined,
               })
+              if (sendResult.externalMessageId != null && response.assistantRowId && this.deps.convRepo) {
+                await this.deps.convRepo
+                  .setExternalMessageId(
+                    workspace.id,
+                    response.assistantRowId,
+                    sendResult.externalMessageId,
+                  )
+                  .catch((e) =>
+                    log().warn('bot-router: setExternalMessageId failed', {
+                      workspaceId: workspace.id,
+                      error: e instanceof Error ? e.message : String(e),
+                    }),
+                  )
+              }
             }
             succeeded = true
             break
