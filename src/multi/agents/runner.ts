@@ -19,6 +19,7 @@ import { log } from '../observability/logger.js'
 import { Summarizer } from '../memory/summarizer.js'
 import { FactExtractor } from '../memory/fact-extractor.js'
 import { embedText } from '../memory/embeddings.js'
+import type { McpRegistry, LoadedRegistry } from './mcp/registry.js'
 
 const SUMMARIZER_THRESHOLD = Number(process.env.BC_SUMMARIZER_THRESHOLD ?? 150)
 const SUMMARIZER_KEEP_RECENT = Number(process.env.BC_SUMMARIZER_KEEP_RECENT ?? 50)
@@ -141,6 +142,33 @@ export interface RunBetsyDeps {
   }>
   /** Injected for testability */
   ttsSpeak?: typeof realSpeak
+  /** Optional per-workspace MCP server registry. When set, the runner loads
+   *  the workspace's enabled MCP servers and bridges their tools into the
+   *  agent. Failures are non-fatal — the agent runs without MCP if loading
+   *  fails. Leave undefined in tests / setups without Postgres MCP wiring. */
+  mcpRegistry?: McpRegistry
+}
+
+/**
+ * Try to load MCP tools for a workspace. Never throws — on any failure
+ * returns an empty registry-like object so the caller can ignore it. The
+ * returned object always has a `closeAll()` method, so callers can defer
+ * shutdown without conditionals.
+ */
+async function loadMcpToolsSafe(
+  registry: McpRegistry | undefined,
+  workspaceId: string,
+): Promise<LoadedRegistry | null> {
+  if (!registry) return null
+  try {
+    return await registry.loadForWorkspace(workspaceId)
+  } catch (e) {
+    log().warn('runBetsy: mcp registry load failed, continuing without MCP', {
+      workspaceId,
+      error: e instanceof Error ? e.message : String(e),
+    })
+    return null
+  }
 }
 
 export interface RunBetsyInput {
@@ -221,15 +249,20 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
     runContext,
   })
 
+  // Wave 1B: bridge per-workspace MCP server tools, if a registry is wired in.
+  // Failures are isolated — agent always runs even if MCP is misconfigured.
+  const mcpLoaded = await loadMcpToolsSafe(deps.mcpRegistry, workspaceId)
+  const mcpTools = mcpLoaded?.getTools() ?? []
+
   const agent = createBetsyAgent({
     workspace,
     persona,
     ownerFacts: context.factContents,
-    tools: { memoryTools, reminderTools, selfieTool, webSearchTool, recallTools },
+    tools: { memoryTools, reminderTools, selfieTool, webSearchTool, recallTools, mcpTools },
     currentChannel: channel,
   })
 
-  log().info('runBetsy: start', { workspaceId, channel, userMsgLen: userMessage.length, skipAppendUser: input.skipAppendUser })
+  log().info('runBetsy: start', { workspaceId, channel, userMsgLen: userMessage.length, skipAppendUser: input.skipAppendUser, mcpToolCount: mcpTools.length })
 
   // Store user message first (unless caller already did it for retry semantics)
   if (!input.skipAppendUser) {
@@ -308,6 +341,11 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
     } catch {
       // TTS failure is non-fatal — return text only
     }
+  }
+
+  // Graceful MCP shutdown — fire-and-forget so we don't delay reply.
+  if (mcpLoaded) {
+    void mcpLoaded.closeAll().catch(() => {})
   }
 
   return {
@@ -394,11 +432,14 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
     runContext,
   })
 
+  const mcpLoaded = await loadMcpToolsSafe(deps.mcpRegistry, workspaceId)
+  const mcpTools = mcpLoaded?.getTools() ?? []
+
   const agent = createBetsyAgent({
     workspace,
     persona,
     ownerFacts: context.factContents,
-    tools: { memoryTools, reminderTools, selfieTool, webSearchTool, recallTools },
+    tools: { memoryTools, reminderTools, selfieTool, webSearchTool, recallTools, mcpTools },
     currentChannel: channel,
   })
 
@@ -500,6 +541,10 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
     fireAndForgetSummarize(deps, workspaceId)
     fireAndForgetExtract(deps, workspaceId, userMessage, result.text)
     fireAndForgetBackfillEmbeddings(deps, workspaceId)
+
+    if (mcpLoaded) {
+      void mcpLoaded.closeAll().catch(() => {})
+    }
 
     return {
       text: result.text,
