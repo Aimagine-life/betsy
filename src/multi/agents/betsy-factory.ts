@@ -10,6 +10,8 @@ export interface BetsyTools {
   selfieTool: MemoryTool
   webSearchTool?: MemoryTool
   recallTools?: MemoryTool[]
+  /** Bridged MCP tools loaded for the current workspace (Wave 1B). Optional. */
+  mcpTools?: MemoryTool[]
 }
 
 export interface CreateBetsyAgentInput {
@@ -57,6 +59,7 @@ export function createBetsyAgent(input: CreateBetsyAgentInput): any {
     tools.selfieTool,
     ...(tools.webSearchTool ? [tools.webSearchTool] : []),
     ...(tools.recallTools ?? []),
+    ...(tools.mcpTools ?? []),
   ]
 
   return new (LlmAgent as any)({
