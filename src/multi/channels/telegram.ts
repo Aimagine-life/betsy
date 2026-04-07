@@ -28,14 +28,6 @@ async function sendHtmlOrPlainReturningId(
   }
 }
 
-/** Backwards-compatible alias used inside streamMessage's early-throw paths. */
-async function sendHtmlOrPlain(
-  bot: Bot,
-  chatId: number,
-  text: string,
-): Promise<void> {
-  await sendHtmlOrPlainReturningId(bot, chatId, text)
-}
 
 export function buildInboundFromTelegramCtx(ctx: Context): InboundEvent {
   const msg = ctx.message!
