@@ -10,6 +10,7 @@ import { createBetsyAgent } from './betsy-factory.js'
 import { createRunContext } from './run-context.js'
 import { buildRootTools } from './root-tools.js'
 import type { SkillManager } from '../skills/manager.js'
+import type { CandidatesRepo as LearnerCandidatesRepo } from '../learner/candidates-repo.js'
 import { speak as realSpeak } from '../gemini/tts.js'
 import { runWithGeminiToolsStream } from './gemini-runner.js'
 import { log } from '../observability/logger.js'
@@ -147,6 +148,11 @@ export interface RunBetsyDeps {
   /** Wave 1C — workspace skills. Optional: when provided, run_skill / list_skills
    *  are exposed to the agent and can execute per-workspace YAML skills. */
   skillManager?: SkillManager
+  // WAVE2-MERGE: Waves 2B (critic) and 2C (feedback) also inject their
+  // services into RunBetsyDeps here. Keep additions additive + optional.
+  /** Wave 2A — LearnerAgent candidate repo. Optional; when wired, the root
+   *  agent exposes list/approve/reject candidate tools. */
+  learnerCandidatesRepo?: LearnerCandidatesRepo
 }
 
 /**
