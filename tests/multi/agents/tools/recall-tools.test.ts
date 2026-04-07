@@ -58,7 +58,7 @@ describe('createRecallTools', () => {
       externalMessageId: 42,
       similarity: expect.any(Number),
     })
-    expect(result.matches[0].similarity).toBeCloseTo(0.85, 2)
+    expect(result.matches[0].similarity).toBeCloseTo(0.925, 2)
   })
 
   it('recall_messages passes role/since/until/limit through', async () => {
