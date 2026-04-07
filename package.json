@@ -14,7 +14,10 @@
     "build:all": "tsup && vite build",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "auth-relay": "tsx src/auth-relay/server.ts",
+    "auth-relay:build": "tsup src/auth-relay/server.ts --format cjs --out-dir dist/auth-relay",
+    "auth-relay:sim": "tsx src/auth-relay/sim.ts"
   },
   "optionalDependencies": {
     "@opentelemetry/sdk-node": "^0.57.0",
