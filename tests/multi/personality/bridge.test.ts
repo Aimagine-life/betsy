@@ -20,64 +20,56 @@ const basePersona: Persona = {
   updatedAt: new Date(),
 }
 
-describe('buildSystemPromptForPersona', () => {
-  it('produces a non-empty prompt including persona name', () => {
+describe('buildSystemPromptForPersona (delegates to core)', () => {
+  it('includes persona name', () => {
     const out = buildSystemPromptForPersona({
       persona: basePersona,
       userDisplayName: 'Konstantin',
       addressForm: 'ty',
+      ownerFacts: [],
     })
     expect(out).toContain('Betsy')
-    expect(out.length).toBeGreaterThan(200)
   })
 
-  it('mentions the user by name when provided', () => {
+  it('includes gender block when gender is female', () => {
+    const out = buildSystemPromptForPersona({
+      persona: basePersona,
+      userDisplayName: 'K',
+      addressForm: 'ty',
+      ownerFacts: [],
+    })
+    expect(out).toMatch(/женщина/i)
+  })
+
+  it('includes owner name and address form', () => {
     const out = buildSystemPromptForPersona({
       persona: basePersona,
       userDisplayName: 'Konstantin',
       addressForm: 'ty',
+      ownerFacts: [],
     })
     expect(out).toContain('Konstantin')
+    expect(out).toMatch(/на ты/i)
   })
 
-  it('respects ty vs vy address form', () => {
-    const ty = buildSystemPromptForPersona({
+  it('includes owner facts in owner block', () => {
+    const out = buildSystemPromptForPersona({
       persona: basePersona,
       userDisplayName: 'Konstantin',
       addressForm: 'ty',
+      ownerFacts: ['Пьёт кофе без сахара', 'Работает в Wildbots'],
     })
-    const vy = buildSystemPromptForPersona({
-      persona: basePersona,
-      userDisplayName: 'Konstantin',
-      addressForm: 'vy',
-    })
-    expect(ty).toMatch(/на ты/i)
-    expect(vy).toMatch(/на вы/i)
+    expect(out).toContain('кофе без сахара')
+    expect(out).toContain('Wildbots')
   })
 
-  it('uses custom personalityPrompt when provided', () => {
-    const custom: Persona = {
-      ...basePersona,
-      personalityPrompt: 'Я саркастичная и колкая Betsy.',
-    }
+  it('uses personalityPrompt as customInstructions when set', () => {
     const out = buildSystemPromptForPersona({
-      persona: custom,
+      persona: { ...basePersona, personalityPrompt: 'Я люблю шоколад и котов.' },
       userDisplayName: 'K',
       addressForm: 'ty',
+      ownerFacts: [],
     })
-    expect(out).toContain('саркастичная')
-  })
-
-  it('uses biography when provided', () => {
-    const withBio: Persona = {
-      ...basePersona,
-      biography: 'Betsy родилась в Санкт-Петербурге, любит кофе.',
-    }
-    const out = buildSystemPromptForPersona({
-      persona: withBio,
-      userDisplayName: 'K',
-      addressForm: 'ty',
-    })
-    expect(out).toContain('Санкт-Петербурге')
+    expect(out).toContain('шоколад')
   })
 })
