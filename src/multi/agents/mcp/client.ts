@@ -13,6 +13,7 @@ import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { McpServerConfig, McpToolDescriptor, McpCallResult } from './types.js'
 import { log } from '../../observability/logger.js'
+import { withSpan } from '../../observability/tracing.js'
 
 const DEFAULT_TIMEOUT_MS = 10_000
 
@@ -88,6 +89,14 @@ export class McpClient {
   }
 
   async callTool(name: string, args: Record<string, unknown>): Promise<McpCallResult> {
+    return withSpan(
+      `betsy.mcp.${this.cfg.name}.${name}`,
+      () => this.callToolImpl(name, args),
+      { server: this.cfg.name, tool: name },
+    )
+  }
+
+  private async callToolImpl(name: string, args: Record<string, unknown>): Promise<McpCallResult> {
     await this.connect()
     const resp: any = await this.withRetry(
       () =>
