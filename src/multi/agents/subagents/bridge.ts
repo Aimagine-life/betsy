@@ -16,6 +16,7 @@ import type { SubAgent } from './types.js'
 import type { SubAgentRegistry } from './registry.js'
 import { runWithGeminiTools, type GeminiRunResult } from '../gemini-runner.js'
 import { log } from '../../observability/logger.js'
+import { withSpan } from '../../observability/tracing.js'
 
 /**
  * Maximum nesting depth for delegation. With MAX = 1, root → sub is allowed
@@ -76,6 +77,19 @@ export function createDelegationTool(
     description,
     parameters: taskParameters,
     async execute(params: any): Promise<unknown> {
+      return withSpan(
+        `betsy.subagent.${agent.name}`,
+        () => executeImpl(params),
+        {
+          agent: agent.name,
+          depth: ctx.parentDepth ?? 0,
+          taskLen: typeof params?.task === 'string' ? params.task.length : 0,
+        },
+      )
+    },
+  }
+
+  async function executeImpl(params: any): Promise<unknown> {
       const parsed = taskParameters.safeParse(params ?? {})
       if (!parsed.success) {
         return { error: 'invalid params: ' + parsed.error.message }
@@ -168,7 +182,6 @@ export function createDelegationTool(
         })
         return { error: err }
       }
-    },
   }
 }
 
