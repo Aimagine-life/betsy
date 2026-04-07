@@ -156,4 +156,22 @@ export class WorkspaceRepo {
       )
     })
   }
+
+  async updateOwnerTg(id: string, tgId: number): Promise<void> {
+    await asAdmin(this.pool, async (client) => {
+      await client.query(
+        `update workspaces set owner_tg_id = $2 where id = $1`,
+        [id, tgId],
+      )
+    })
+  }
+
+  async updateOwnerMax(id: string, maxId: number): Promise<void> {
+    await asAdmin(this.pool, async (client) => {
+      await client.query(
+        `update workspaces set owner_max_id = $2 where id = $1`,
+        [id, maxId],
+      )
+    })
+  }
 }
