@@ -65,14 +65,23 @@ export function createRecallTools(deps: RecallToolsDeps): MemoryTool[] {
         return { matches: [], error: 'embedding_failed' }
       }
 
-      const hits = await convRepo.searchByEmbedding(workspaceId, queryVec, {
-        chatId: currentChatId,
-        limit,
-        role: parsed.role ?? 'any',
-        since: parsed.since,
-        until: parsed.until,
-        excludeRecentN: EXCLUDE_RECENT_N,
-      })
+      let hits: Awaited<ReturnType<typeof convRepo.searchByEmbedding>>
+      try {
+        hits = await convRepo.searchByEmbedding(workspaceId, queryVec, {
+          chatId: currentChatId,
+          limit,
+          role: parsed.role ?? 'any',
+          since: parsed.since,
+          until: parsed.until,
+          excludeRecentN: EXCLUDE_RECENT_N,
+        })
+      } catch (e) {
+        log().warn('recall_messages: search failed', {
+          workspaceId,
+          error: e instanceof Error ? e.message : String(e),
+        })
+        return { matches: [], error: 'search_failed' }
+      }
 
       return {
         matches: hits.map((h) => ({
@@ -82,7 +91,8 @@ export function createRecallTools(deps: RecallToolsDeps): MemoryTool[] {
           chatId: h.chatId,
           timestamp:
             h.createdAt instanceof Date ? h.createdAt.toISOString() : String(h.createdAt),
-          similarity: Number((1 - h.distance).toFixed(3)),
+          // pgvector cosine distance is in [0, 2]; rescale to similarity in [0, 1].
+          similarity: Number(Math.max(0, 1 - h.distance / 2).toFixed(3)),
         })),
       }
     },
