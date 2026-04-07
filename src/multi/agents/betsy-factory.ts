@@ -7,11 +7,19 @@ import type { MemoryTool } from './tools/memory-tools.js'
 export interface BetsyTools {
   memoryTools: MemoryTool[]
   reminderTools: MemoryTool[]
-  selfieTool: MemoryTool
+  /** Optional in Wave 1A-iii: when the runner pre-flattens leaf tools into
+   *  `memoryTools`, the selfie tool is already included and this field is
+   *  omitted. Legacy callers (tests, single-mode wiring) still pass it. */
+  selfieTool?: MemoryTool
   webSearchTool?: MemoryTool
   recallTools?: MemoryTool[]
   /** Bridged MCP tools loaded for the current workspace (Wave 1B). Optional. */
   mcpTools?: MemoryTool[]
+  /** Wave 1A-iii — synthetic delegate_to_<name> tools, one per sub-agent. */
+  delegationTools?: MemoryTool[]
+  /** Wave 1C — run_skill / list_skills. Pre-built and passed in by the runner
+   *  so the factory does not need a SkillManager dependency. */
+  skillTools?: MemoryTool[]
 }
 
 export interface CreateBetsyAgentInput {
@@ -56,10 +64,12 @@ export function createBetsyAgent(input: CreateBetsyAgentInput): any {
   const allTools = [
     ...tools.memoryTools,
     ...tools.reminderTools,
-    tools.selfieTool,
+    ...(tools.selfieTool ? [tools.selfieTool] : []),
     ...(tools.webSearchTool ? [tools.webSearchTool] : []),
     ...(tools.recallTools ?? []),
     ...(tools.mcpTools ?? []),
+    ...(tools.delegationTools ?? []),
+    ...(tools.skillTools ?? []),
   ]
 
   return new (LlmAgent as any)({

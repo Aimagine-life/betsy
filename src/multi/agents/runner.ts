@@ -6,16 +6,10 @@ import type { ConversationRepo } from '../memory/conversation-repo.js'
 import type { RemindersRepo } from '../reminders/repo.js'
 import type { S3Storage } from '../storage/s3.js'
 import { loadAgentContext } from './context-loader.js'
-import { createMemoryTools } from './tools/memory-tools.js'
-import { createReminderTools } from './tools/reminder-tools.js'
-import { createSelfieTool } from './tools/selfie-tool.js'
-import { createWebSearchTool } from './tools/web-search-tool.js'
 import { createBetsyAgent } from './betsy-factory.js'
 import { createRunContext } from './run-context.js'
-import { createRecallTools } from './tools/recall-tools.js'
-import { createSkillTools } from '../skills/skill-tool.js'
+import { buildRootTools } from './root-tools.js'
 import type { SkillManager } from '../skills/manager.js'
-import type { SkillLLM } from '../skills/executor.js'
 import { speak as realSpeak } from '../gemini/tts.js'
 import { runWithGeminiToolsStream } from './gemini-runner.js'
 import { log } from '../observability/logger.js'
@@ -227,77 +221,46 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
     gemini: deps.gemini,
   })
 
-  const memoryTools = createMemoryTools({
-    factsRepo: deps.factsRepo,
-    convRepo: deps.convRepo,
-    gemini: deps.gemini,
-    workspaceId,
-  })
-  // Wave 1C — skills: append run_skill / list_skills if a SkillManager is wired in.
-  // WAVE1C-MERGE: parallel waves (1A subagents, 1B MCP) may also append tools here;
-  // keep additions sequential and conflict-free.
-  if (deps.skillManager) {
-    const skillLlm: SkillLLM = {
-      async generateText(prompt: string): Promise<string> {
-        const resp: any = await deps.gemini.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        })
-        return (
-          (resp as any).text ??
-          (resp as any).candidates?.[0]?.content?.parts?.[0]?.text ??
-          ''
-        )
-      },
-    }
-    const skillTools = createSkillTools({
-      workspaceId,
-      manager: deps.skillManager,
-      llm: skillLlm,
-      logger: log(),
-      // Avoid the obvious recursion: a skill cannot call run_skill / list_skills.
-      getRunnableTools: () => memoryTools.filter(
-        (t) => t.name !== 'run_skill' && t.name !== 'list_skills',
-      ),
-    })
-    memoryTools.push(...skillTools)
-  }
-  const reminderTools = createReminderTools({
-    remindersRepo: deps.remindersRepo,
-    workspaceId,
-    currentChannel: channel,
-  })
-  const selfieTool = createSelfieTool({
-    personaRepo: deps.personaRepo,
-    s3: deps.s3,
-    factsRepo: deps.factsRepo,
-    gemini: deps.gemini,
-    workspaceId,
-  })
-  const webSearchTool = createWebSearchTool(deps.gemini)
-  const recallTools = createRecallTools({
-    convRepo: deps.convRepo,
-    gemini: deps.gemini,
-    workspaceId,
-    currentChatId: input.currentChatId,
-    currentChannel: channel,
-    runContext,
-  })
-
   // Wave 1B: bridge per-workspace MCP server tools, if a registry is wired in.
   // Failures are isolated — agent always runs even if MCP is misconfigured.
   const mcpLoaded = await loadMcpToolsSafe(deps.mcpRegistry, workspaceId)
-  const mcpTools = mcpLoaded?.getTools() ?? []
+
+  // Wave 1A-iii: centralised tool composition. Builds leaf tools, sub-agent
+  // delegation tools, and skill tools in one place so runBetsy + runBetsyStream
+  // stay in sync.
+  const bundle = buildRootTools(deps, {
+    workspaceId,
+    channel,
+    currentChatId: input.currentChatId,
+    runContext,
+    mcpLoaded,
+  })
 
   const agent = createBetsyAgent({
     workspace,
     persona,
     ownerFacts: context.factContents,
-    tools: { memoryTools, reminderTools, selfieTool, webSearchTool, recallTools, mcpTools },
+    // Pass the pre-assembled flat list via the legacy field shape: leafTools
+    // already includes memory/reminder/selfie/search/recall/mcp, so we hand
+    // them through as one bucket plus the new delegation/skill buckets.
+    tools: {
+      memoryTools: bundle.leafTools,
+      reminderTools: [],
+      delegationTools: bundle.delegationTools,
+      skillTools: bundle.skillTools,
+    },
     currentChannel: channel,
   })
 
-  log().info('runBetsy: start', { workspaceId, channel, userMsgLen: userMessage.length, skipAppendUser: input.skipAppendUser, mcpToolCount: mcpTools.length })
+  log().info('runBetsy: start', {
+    workspaceId,
+    channel,
+    userMsgLen: userMessage.length,
+    skipAppendUser: input.skipAppendUser,
+    mcpToolCount: mcpLoaded?.getTools().length ?? 0,
+    delegationToolCount: bundle.delegationTools.length,
+    skillToolCount: bundle.skillTools.length,
+  })
 
   // Store user message first (unless caller already did it for retry semantics)
   if (!input.skipAppendUser) {
@@ -439,71 +402,27 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
     gemini: deps.gemini,
   })
 
-  const memoryTools = createMemoryTools({
-    factsRepo: deps.factsRepo,
-    convRepo: deps.convRepo,
-    gemini: deps.gemini,
-    workspaceId,
-  })
-  // Wave 1C — skills: append run_skill / list_skills if a SkillManager is wired in.
-  // WAVE1C-MERGE: parallel waves (1A subagents, 1B MCP) may also append tools here;
-  // keep additions sequential and conflict-free.
-  if (deps.skillManager) {
-    const skillLlm: SkillLLM = {
-      async generateText(prompt: string): Promise<string> {
-        const resp: any = await deps.gemini.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        })
-        return (
-          (resp as any).text ??
-          (resp as any).candidates?.[0]?.content?.parts?.[0]?.text ??
-          ''
-        )
-      },
-    }
-    const skillTools = createSkillTools({
-      workspaceId,
-      manager: deps.skillManager,
-      llm: skillLlm,
-      logger: log(),
-      // Avoid the obvious recursion: a skill cannot call run_skill / list_skills.
-      getRunnableTools: () => memoryTools.filter(
-        (t) => t.name !== 'run_skill' && t.name !== 'list_skills',
-      ),
-    })
-    memoryTools.push(...skillTools)
-  }
-  const reminderTools = createReminderTools({
-    remindersRepo: deps.remindersRepo,
-    workspaceId,
-    currentChannel: channel,
-  })
-  const selfieTool = createSelfieTool({
-    personaRepo: deps.personaRepo,
-    s3: deps.s3,
-    factsRepo: deps.factsRepo,
-    gemini: deps.gemini,
-    workspaceId,
-  })
-  const webSearchTool = createWebSearchTool(deps.gemini)
-  const recallTools = createRecallTools({
-    convRepo: deps.convRepo,
-    gemini: deps.gemini,
-    workspaceId,
-    currentChatId: input.currentChatId,
-    currentChannel: channel,
-    runContext,
-  })
-
   const mcpLoaded = await loadMcpToolsSafe(deps.mcpRegistry, workspaceId)
-  const mcpTools = mcpLoaded?.getTools() ?? []
+
+  // Wave 1A-iii: shared tool composition (see runBetsy above for rationale).
+  const bundle = buildRootTools(deps, {
+    workspaceId,
+    channel,
+    currentChatId: input.currentChatId,
+    runContext,
+    mcpLoaded,
+  })
 
   const agent = createBetsyAgent({
     workspace,
     persona,
     ownerFacts: context.factContents,
-    tools: { memoryTools, reminderTools, selfieTool, webSearchTool, recallTools, mcpTools },
+    tools: {
+      memoryTools: bundle.leafTools,
+      reminderTools: [],
+      delegationTools: bundle.delegationTools,
+      skillTools: bundle.skillTools,
+    },
     currentChannel: channel,
   })
 
@@ -513,6 +432,9 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
     userMsgLen: userMessage.length,
     ownerFactsCount: context.factContents.length,
     historyCount: context.history.length,
+    mcpToolCount: mcpLoaded?.getTools().length ?? 0,
+    delegationToolCount: bundle.delegationTools.length,
+    skillToolCount: bundle.skillTools.length,
   })
 
   if (!input.skipAppendUser) {
