@@ -17,6 +17,9 @@ import { Summarizer } from '../memory/summarizer.js'
 import { FactExtractor } from '../memory/fact-extractor.js'
 import { embedText } from '../memory/embeddings.js'
 import type { McpRegistry, LoadedRegistry } from './mcp/registry.js'
+// WAVE2-MERGE: critic wiring for Wave 2B (feature-flagged via BC_CRITIC_ENABLED).
+import type { Critic } from '../critic/critic.js'
+import { shouldApplySuggestion } from '../critic/critic.js'
 
 const SUMMARIZER_THRESHOLD = Number(process.env.BC_SUMMARIZER_THRESHOLD ?? 150)
 const SUMMARIZER_KEEP_RECENT = Number(process.env.BC_SUMMARIZER_KEEP_RECENT ?? 50)
@@ -147,6 +150,10 @@ export interface RunBetsyDeps {
   /** Wave 1C — workspace skills. Optional: when provided, run_skill / list_skills
    *  are exposed to the agent and can execute per-workspace YAML skills. */
   skillManager?: SkillManager
+  // WAVE2-MERGE: Wave 2B — optional pre-send critic. Only invoked from runBetsy
+  // (non-stream path) when BC_CRITIC_ENABLED=1 is set. Stream path skips the
+  // critic (see runBetsyStream). Fail-open: critic errors never block a reply.
+  critic?: Critic
 }
 
 /**
@@ -299,13 +306,54 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
     throw e
   }
 
+  // WAVE2-MERGE: Wave 2B — pre-send critic. Runs only when the deps provide a
+  // critic AND the env flag is on. One-shot, fail-open, no rewrite loops.
+  let finalText = result.text
+  if (deps.critic && process.env.BC_CRITIC_ENABLED === '1') {
+    try {
+      const review = await deps.critic.review({
+        draftResponse: result.text,
+        userMessage,
+        personaPrompt: persona.personalityPrompt ?? '',
+        ownerFacts: context.factContents.slice(0, 10),
+        channel,
+      })
+      log().info('critic: reviewed', {
+        workspaceId,
+        ok: review.ok,
+        issueCount: review.issues.length,
+        ms: review.durationMs,
+      })
+      const decision = shouldApplySuggestion(result.text, review)
+      if (decision.apply && review.suggested) {
+        finalText = review.suggested
+        log().info('critic: applied suggestion', {
+          workspaceId,
+          originalLen: result.text.length,
+          suggestedLen: finalText.length,
+        })
+      } else if (!review.ok) {
+        log().warn('critic: issues but not applying', {
+          workspaceId,
+          reason: decision.reason,
+          issues: review.issues,
+        })
+      }
+    } catch (e) {
+      log().warn('critic: failed, sending original', {
+        workspaceId,
+        error: e instanceof Error ? e.message : String(e),
+      })
+    }
+  }
+
   // Store assistant reply
   let assistantRowId: string | undefined
   try {
     const row = await deps.convRepo.append(workspaceId, {
       channel,
       role: 'assistant',
-      content: result.text,
+      content: finalText,
       toolCalls: result.toolCalls,
       tokensUsed: result.tokensUsed,
       chatId: input.currentChatId,
@@ -323,7 +371,7 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
   // Background: rolling-window summarization (don't block reply)
   fireAndForgetSummarize(deps, workspaceId)
   // Background: passive fact extraction from this exchange
-  fireAndForgetExtract(deps, workspaceId, userMessage, result.text)
+  fireAndForgetExtract(deps, workspaceId, userMessage, finalText)
   // Background: backfill embeddings for any facts that are missing them
   fireAndForgetBackfillEmbeddings(deps, workspaceId)
 
@@ -334,7 +382,7 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
   let audio: BetsyResponse['audio'] | undefined
   if (shouldSpeak) {
     try {
-      const tts = await ttsSpeak(deps.gemini, result.text, persona.voiceId)
+      const tts = await ttsSpeak(deps.gemini, finalText, persona.voiceId)
       audio = { base64: tts.audioBase64, mimeType: tts.mimeType }
     } catch {
       // TTS failure is non-fatal — return text only
@@ -347,7 +395,7 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
   }
 
   return {
-    text: result.text,
+    text: finalText,
     audio,
     toolCalls: result.toolCalls,
     tokensUsed: result.tokensUsed,
@@ -425,6 +473,13 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
     },
     currentChannel: channel,
   })
+
+  // WAVE2-MERGE: Wave 2B — stream path intentionally skips the critic because
+  // the user is already seeing tokens arrive. WAVE3-TODO: post-stream review
+  // with an edit/amend message emitted by the channel adapter.
+  if (deps.critic && process.env.BC_CRITIC_ENABLED === '1') {
+    log().info('critic: skipped (streaming path)', { workspaceId })
+  }
 
   log().info('runBetsyStream: agent built', {
     workspaceId,
