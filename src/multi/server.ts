@@ -17,6 +17,7 @@ import { RemindersRepo } from './reminders/repo.js'
 import { LinkCodesRepo } from './linking/repo.js'
 import { LinkingService } from './linking/service.js'
 import { runBetsy } from './agents/runner.js'
+import { runWithGeminiTools } from './agents/gemini-runner.js'
 import { startRemindersWorker } from './jobs/reminders-worker.js'
 
 export async function startMultiServer(): Promise<void> {
@@ -102,28 +103,7 @@ export async function startMultiServer(): Promise<void> {
     s3: env.BC_S3_ACCESS_KEY ? getS3Storage() : ({} as any),
     gemini: getGemini(),
     agentRunner: async (agent: any, userMessage: string) => {
-      const gemini = getGemini()
-      const instruction = (agent as any).instruction ?? ''
-      const rawModel = (agent as any).model
-      const modelName =
-        typeof rawModel === 'string'
-          ? rawModel
-          : rawModel?.model ?? rawModel?.name ?? rawModel?.modelName ?? 'gemini-flash-latest'
-      const gResp = await gemini.models.generateContent({
-        model: modelName,
-        contents: [{ role: 'user', parts: [{ text: userMessage }] }],
-        config: { systemInstruction: instruction } as any,
-      })
-      const text =
-        (gResp as any).text ??
-        (gResp as any).candidates?.[0]?.content?.parts?.[0]?.text ??
-        ''
-      const usage = (gResp as any).usageMetadata ?? {}
-      return {
-        text,
-        toolCalls: [],
-        tokensUsed: (usage.totalTokenCount as number) ?? 0,
-      }
+      return runWithGeminiTools(getGemini(), agent, userMessage)
     },
   }
 
