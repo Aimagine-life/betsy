@@ -69,8 +69,8 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
     factsRepo: deps.factsRepo,
     convRepo: deps.convRepo,
     workspaceId,
-    factLimit: 50,
-    historyLimit: 20,
+    factLimit: Number(process.env.BC_FACT_LIMIT ?? 100),
+    historyLimit: Number(process.env.BC_HISTORY_LIMIT ?? 200),
   })
 
   const memoryTools = createMemoryTools({
@@ -205,8 +205,8 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
     factsRepo: deps.factsRepo,
     convRepo: deps.convRepo,
     workspaceId,
-    factLimit: 50,
-    historyLimit: 20,
+    factLimit: Number(process.env.BC_FACT_LIMIT ?? 100),
+    historyLimit: Number(process.env.BC_HISTORY_LIMIT ?? 200),
   })
 
   const memoryTools = createMemoryTools({ factsRepo: deps.factsRepo, workspaceId })

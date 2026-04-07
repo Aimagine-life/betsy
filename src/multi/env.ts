@@ -43,6 +43,10 @@ const envSchema = z.object({
   // Ops
   BC_LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   BC_REMINDERS_POLL_INTERVAL_MS: z.coerce.number().int().default(30_000),
+
+  // Memory window — Gemini 2.5 supports 1M context, so we can be generous
+  BC_HISTORY_LIMIT: z.coerce.number().int().min(10).max(1000).default(200),
+  BC_FACT_LIMIT: z.coerce.number().int().min(10).max(500).default(100),
 })
 
 export type Env = z.infer<typeof envSchema>
