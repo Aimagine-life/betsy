@@ -201,11 +201,20 @@ export interface ConversationTurn {
   content: string
 }
 
+export interface RunStreamOptions {
+  /** When set, the FIRST turn forces the model to call exactly this tool
+   *  via Gemini's `tool_config.function_calling_config.mode = ANY` with
+   *  `allowed_function_names`. After the tool returns, force is dropped
+   *  so the model can write a free-form text response. */
+  forceTool?: string
+}
+
 export async function runWithGeminiToolsStream(
   gemini: GoogleGenAI,
   agent: any,
   userMessage: string,
   history: ConversationTurn[] = [],
+  options: RunStreamOptions = {},
 ): Promise<StreamingRunResult> {
   const instruction: string = (agent as any).instruction ?? ''
   const rawModel = (agent as any).model
@@ -288,6 +297,22 @@ export async function runWithGeminiToolsStream(
   const runLoop = async () => {
     try {
       for (let turn = 0; turn < MAX_TURNS; turn++) {
+        // Force a specific tool call ONLY on the very first turn — after the
+        // tool returns its result, we want the model to write text freely.
+        // Without this, the model can hallucinate a text reply ("лови!") even
+        // when the system prompt says "always call generate_selfie", because
+        // the conversation history may contain previous failure messages that
+        // anchor the model into refusing.
+        const toolConfig =
+          turn === 0 && options.forceTool
+            ? {
+                functionCallingConfig: {
+                  mode: 'ANY',
+                  allowedFunctionNames: [options.forceTool],
+                },
+              }
+            : undefined
+
         const stream: any = await withRateLimitRetry(() =>
           gemini.models.generateContentStream({
             model: modelName,
@@ -295,6 +320,7 @@ export async function runWithGeminiToolsStream(
             config: {
               systemInstruction: instruction,
               ...(geminiTools ? { tools: geminiTools } : {}),
+              ...(toolConfig ? { toolConfig } : {}),
             } as any,
           }),
         )

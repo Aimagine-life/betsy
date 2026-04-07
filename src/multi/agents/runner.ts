@@ -9,16 +9,87 @@ import { loadAgentContext } from './context-loader.js'
 import { createMemoryTools } from './tools/memory-tools.js'
 import { createReminderTools } from './tools/reminder-tools.js'
 import { createSelfieTool } from './tools/selfie-tool.js'
+import { createWebSearchTool } from './tools/web-search-tool.js'
 import { createBetsyAgent } from './betsy-factory.js'
 import { speak as realSpeak } from '../gemini/tts.js'
 import { runWithGeminiToolsStream } from './gemini-runner.js'
 import { log } from '../observability/logger.js'
 import { Summarizer } from '../memory/summarizer.js'
+import { FactExtractor } from '../memory/fact-extractor.js'
+import { embedText } from '../memory/embeddings.js'
 
 const SUMMARIZER_THRESHOLD = Number(process.env.BC_SUMMARIZER_THRESHOLD ?? 150)
 const SUMMARIZER_KEEP_RECENT = Number(process.env.BC_SUMMARIZER_KEEP_RECENT ?? 50)
 
 const SUMMARIZER_DELAY_MS = Number(process.env.BC_SUMMARIZER_DELAY_MS ?? 30_000)
+
+const EXTRACTOR_ENABLED = (process.env.BC_EXTRACTOR_ENABLED ?? 'true') !== 'false'
+const EXTRACTOR_DELAY_MS = Number(process.env.BC_EXTRACTOR_DELAY_MS ?? 10_000)
+
+/**
+ * Background backfill: pick facts with null embeddings and compute them.
+ * Called once per assistant turn; processes up to 20 facts per call.
+ */
+function fireAndForgetBackfillEmbeddings(deps: RunBetsyDeps, workspaceId: string): void {
+  setTimeout(() => {
+    void (async () => {
+      try {
+        const missing = await deps.factsRepo.listMissingEmbeddings(workspaceId, 20)
+        if (missing.length === 0) return
+        log().info('backfill: computing embeddings for facts without vectors', {
+          workspaceId,
+          count: missing.length,
+        })
+        for (const fact of missing) {
+          try {
+            const vec = await embedText(deps.gemini, fact.content)
+            await deps.factsRepo.setEmbedding(workspaceId, fact.id, vec)
+          } catch (e) {
+            log().warn('backfill: embedding failed for fact', {
+              workspaceId,
+              factId: fact.id,
+              error: e instanceof Error ? e.message : String(e),
+            })
+          }
+        }
+        log().info('backfill: done', { workspaceId, processed: missing.length })
+      } catch (e) {
+        log().error('backfill: unexpected error', {
+          workspaceId,
+          error: e instanceof Error ? e.message : String(e),
+        })
+      }
+    })()
+  }, 0).unref()
+}
+
+/**
+ * Background passive fact extraction from the last user/assistant exchange.
+ * Runs after a configurable delay so it doesn't compete for rate-limit slots.
+ */
+function fireAndForgetExtract(
+  deps: RunBetsyDeps,
+  workspaceId: string,
+  userMessage: string,
+  assistantText: string,
+): void {
+  if (!EXTRACTOR_ENABLED) return
+  const extractor = new FactExtractor({ gemini: deps.gemini, factsRepo: deps.factsRepo })
+  setTimeout(() => {
+    void extractor
+      .maybeExtract({
+        workspaceId,
+        lastUserMessage: userMessage,
+        lastAssistantMessage: assistantText,
+      })
+      .catch((e) =>
+        log().error('extractor: background run failed', {
+          workspaceId,
+          error: e instanceof Error ? e.message : String(e),
+        }),
+      )
+  }, EXTRACTOR_DELAY_MS).unref()
+}
 
 function fireAndForgetSummarize(deps: RunBetsyDeps, workspaceId: string): void {
   const summarizer = new Summarizer({
@@ -75,6 +146,13 @@ export interface RunBetsyInput {
   userMessage: string
   channel: 'telegram' | 'max'
   deps: RunBetsyDeps
+  /** When true, do NOT persist the user message (caller already did it).
+   *  Used by retry loops to avoid duplicating the user turn in conversation. */
+  skipAppendUser?: boolean
+  /** When set, forces the LLM to call exactly this tool on its first turn.
+   *  Used to bypass history-poisoning when the user clearly asks for a specific
+   *  action (e.g. selfie) and we don't want the model to "rationalize" a refusal. */
+  forceTool?: string
 }
 
 export interface BetsyResponse {
@@ -100,6 +178,8 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
     workspaceId,
     factLimit: Number(process.env.BC_FACT_LIMIT ?? 100),
     historyLimit: Number(process.env.BC_HISTORY_LIMIT ?? 200),
+    userQuery: userMessage,
+    gemini: deps.gemini,
   })
 
   const memoryTools = createMemoryTools({
@@ -116,34 +196,38 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
   const selfieTool = createSelfieTool({
     personaRepo: deps.personaRepo,
     s3: deps.s3,
+    factsRepo: deps.factsRepo,
     gemini: deps.gemini,
     workspaceId,
   })
+  const webSearchTool = createWebSearchTool(deps.gemini)
 
   const agent = createBetsyAgent({
     workspace,
     persona,
     ownerFacts: context.factContents,
-    tools: { memoryTools, reminderTools, selfieTool },
+    tools: { memoryTools, reminderTools, selfieTool, webSearchTool },
     currentChannel: channel,
   })
 
-  log().info('runBetsy: start', { workspaceId, channel, userMsgLen: userMessage.length })
+  log().info('runBetsy: start', { workspaceId, channel, userMsgLen: userMessage.length, skipAppendUser: input.skipAppendUser })
 
-  // Store user message first
-  try {
-    await deps.convRepo.append(workspaceId, {
-      channel,
-      role: 'user',
-      content: userMessage,
-    } as any)
-    log().info('runBetsy: user message appended', { workspaceId })
-  } catch (e) {
-    log().error('runBetsy: append user failed', {
-      workspaceId,
-      error: e instanceof Error ? e.message : String(e),
-    })
-    throw e
+  // Store user message first (unless caller already did it for retry semantics)
+  if (!input.skipAppendUser) {
+    try {
+      await deps.convRepo.append(workspaceId, {
+        channel,
+        role: 'user',
+        content: userMessage,
+      } as any)
+      log().info('runBetsy: user message appended', { workspaceId })
+    } catch (e) {
+      log().error('runBetsy: append user failed', {
+        workspaceId,
+        error: e instanceof Error ? e.message : String(e),
+      })
+      throw e
+    }
   }
 
   let result: { text: string; toolCalls: unknown[]; tokensUsed: number }
@@ -184,6 +268,10 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
 
   // Background: rolling-window summarization (don't block reply)
   fireAndForgetSummarize(deps, workspaceId)
+  // Background: passive fact extraction from this exchange
+  fireAndForgetExtract(deps, workspaceId, userMessage, result.text)
+  // Background: backfill embeddings for any facts that are missing them
+  fireAndForgetBackfillEmbeddings(deps, workspaceId)
 
   // Decide whether to speak
   const voiceBehavior = persona.behaviorConfig.voice
@@ -241,6 +329,8 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
     workspaceId,
     factLimit: Number(process.env.BC_FACT_LIMIT ?? 100),
     historyLimit: Number(process.env.BC_HISTORY_LIMIT ?? 200),
+    userQuery: userMessage,
+    gemini: deps.gemini,
   })
 
   const memoryTools = createMemoryTools({
@@ -257,15 +347,17 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
   const selfieTool = createSelfieTool({
     personaRepo: deps.personaRepo,
     s3: deps.s3,
+    factsRepo: deps.factsRepo,
     gemini: deps.gemini,
     workspaceId,
   })
+  const webSearchTool = createWebSearchTool(deps.gemini)
 
   const agent = createBetsyAgent({
     workspace,
     persona,
     ownerFacts: context.factContents,
-    tools: { memoryTools, reminderTools, selfieTool },
+    tools: { memoryTools, reminderTools, selfieTool, webSearchTool },
     currentChannel: channel,
   })
 
@@ -277,18 +369,20 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
     historyCount: context.history.length,
   })
 
-  try {
-    await deps.convRepo.append(workspaceId, {
-      channel,
-      role: 'user',
-      content: userMessage,
-    } as any)
-  } catch (e) {
-    log().error('runBetsyStream: append user failed', {
-      workspaceId,
-      error: e instanceof Error ? e.message : String(e),
-    })
-    throw e
+  if (!input.skipAppendUser) {
+    try {
+      await deps.convRepo.append(workspaceId, {
+        channel,
+        role: 'user',
+        content: userMessage,
+      } as any)
+    } catch (e) {
+      log().error('runBetsyStream: append user failed', {
+        workspaceId,
+        error: e instanceof Error ? e.message : String(e),
+      })
+      throw e
+    }
   }
 
   const { textStream: rawStream, finalize } = await runWithGeminiToolsStream(
@@ -296,6 +390,7 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
     agent,
     userMessage,
     context.history,
+    { forceTool: input.forceTool },
   )
 
   // Wrap raw stream so the consumer can iterate exactly once and we still get
@@ -332,6 +427,10 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
     }
     // Background: rolling-window summarization (don't block reply)
     fireAndForgetSummarize(deps, workspaceId)
+    // Background: passive fact extraction from this exchange
+    fireAndForgetExtract(deps, workspaceId, userMessage, result.text)
+    // Background: backfill embeddings for any facts that are missing them
+    fireAndForgetBackfillEmbeddings(deps, workspaceId)
     return {
       text: result.text,
       toolCalls: result.toolCalls,

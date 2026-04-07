@@ -68,7 +68,7 @@ export async function startMultiServer(): Promise<void> {
       models: [
         'gemini-2.5-flash',
         'gemini-2.5-pro',
-        'gemini-3.1-flash-image-preview',
+        'gemini-2.5-flash-image-preview',
         'gemini-2.5-flash-preview-tts',
       ],
     })
@@ -78,7 +78,7 @@ export async function startMultiServer(): Promise<void> {
       models: [
         'gemini-2.5-flash',
         'gemini-2.5-pro',
-        'gemini-3.1-flash-image-preview',
+        'gemini-2.5-flash-image-preview',
         'gemini-2.5-flash-preview-tts',
       ],
     })
@@ -87,7 +87,7 @@ export async function startMultiServer(): Promise<void> {
   // Repos
   const wsRepo = new WorkspaceRepo(pool)
   const personaRepo = new PersonaRepo(pool)
-  const factsRepo = new FactsRepo(pool)
+  const factsRepo = new FactsRepo(pool, getGemini())
   const convRepo = new ConversationRepo(pool)
   const remindersRepo = new RemindersRepo(pool)
   const linkCodesRepo = new LinkCodesRepo(pool)
@@ -120,8 +120,12 @@ export async function startMultiServer(): Promise<void> {
     remindersRepo,
     s3: env.BC_S3_ACCESS_KEY ? getS3Storage() : ({} as any),
     gemini: getGemini(),
-    agentRunner: async (agent: any, userMessage: string) => {
-      return runWithGeminiTools(getGemini(), agent, userMessage)
+    agentRunner: async (
+      agent: any,
+      userMessage: string,
+      history?: Array<{ role: 'user' | 'assistant' | 'tool'; content: string }>,
+    ) => {
+      return runWithGeminiTools(getGemini(), agent, userMessage, history ?? [])
     },
   }
 
@@ -169,16 +173,22 @@ export async function startMultiServer(): Promise<void> {
   const healthzServer = startHealthzServer(env.BC_HEALTHZ_PORT, pool)
   logger.info('healthz server listening', { port: env.BC_HEALTHZ_PORT })
 
-  // Graceful shutdown
+  // Graceful shutdown — wait up to 5 min for in-flight tool work (selfie
+  // generation can take 1-3 minutes via Nano Banana 3.1). Hard exit at 6 min.
   const shutdown = async (signal: string) => {
     logger.info('shutdown received', { signal })
     const hardTimeout = setTimeout(() => {
-      logger.error('shutdown timeout, force exit')
+      logger.error('shutdown hard timeout, force exit')
       process.exit(1)
-    }, 30_000)
+    }, 360_000)
     hardTimeout.unref()
 
     try {
+      // Stop accepting NEW work first (router flips a flag, channels still
+      // poll but new inbound is dropped). Then drain in-flight processBatch
+      // promises so we don't kill running selfies / web searches.
+      logger.info('shutdown: draining in-flight work')
+      await router.drainInFlight(300_000)
       await remindersWorker.stop()
       for (const adapter of Object.values(channels)) {
         if (adapter) await adapter.stop()

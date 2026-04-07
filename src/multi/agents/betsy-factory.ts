@@ -8,6 +8,7 @@ export interface BetsyTools {
   memoryTools: MemoryTool[]
   reminderTools: MemoryTool[]
   selfieTool: MemoryTool
+  webSearchTool?: MemoryTool
 }
 
 export interface CreateBetsyAgentInput {
@@ -53,6 +54,7 @@ export function createBetsyAgent(input: CreateBetsyAgentInput): any {
     ...tools.memoryTools,
     ...tools.reminderTools,
     tools.selfieTool,
+    ...(tools.webSearchTool ? [tools.webSearchTool] : []),
   ]
 
   return new (LlmAgent as any)({

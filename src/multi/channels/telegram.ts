@@ -122,9 +122,9 @@ export class TelegramAdapter implements ChannelAdapter {
     this.handler = handler
   }
 
-  async sendTyping(chatId: string): Promise<void> {
+  async sendTyping(chatId: string, action?: string): Promise<void> {
     try {
-      await this.bot.api.sendChatAction(Number(chatId), 'typing')
+      await this.bot.api.sendChatAction(Number(chatId), (action ?? 'typing') as any)
     } catch (e) {
       // not fatal — just no indicator
     }
@@ -146,6 +146,7 @@ export class TelegramAdapter implements ChannelAdapter {
     let lastText = ''
     let draftSupported = true
     let throttleUntil = 0
+    let streamFailed = false
 
     try {
       for await (const accumulated of msg.textStream) {
@@ -185,11 +186,14 @@ export class TelegramAdapter implements ChannelAdapter {
           }
         }
       }
+    } catch (e) {
+      streamFailed = true
+      throw e
     } finally {
-      // Finalize: send the actual message regardless. This becomes the persisted
-      // message in the chat history. If draft streaming worked, Telegram replaces
-      // the animated draft with this real message.
-      if (lastText && lastText.length > 0) {
+      // Only finalize on natural success. On error we leave the ephemeral
+      // Telegram draft to expire on its own (drafts are not persisted as
+      // real messages), so retries can re-send cleanly without duplicates.
+      if (!streamFailed && lastText && lastText.length > 0) {
         const finalText = lastText.length > 4096 ? lastText.slice(0, 4096) : lastText
         await sendHtmlOrPlain(this.bot, chatIdNum, finalText)
       }
