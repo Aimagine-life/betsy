@@ -14,6 +14,7 @@ import type { CandidatesRepo as LearnerCandidatesRepo } from '../learner/candida
 import { speak as realSpeak } from '../gemini/tts.js'
 import { runWithGeminiToolsStream } from './gemini-runner.js'
 import { log } from '../observability/logger.js'
+import { withSpan } from '../observability/tracing.js'
 import { Summarizer } from '../memory/summarizer.js'
 import { FactExtractor } from '../memory/fact-extractor.js'
 import { embedText } from '../memory/embeddings.js'
@@ -218,6 +219,20 @@ export interface BetsyResponse {
 }
 
 export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
+  return withSpan(
+    'betsy.runBetsy',
+    () => runBetsyImpl(input),
+    {
+      workspaceId: input.workspaceId,
+      channel: input.channel,
+      userMsgLen: input.userMessage.length,
+      hasMcpRegistry: !!input.deps.mcpRegistry,
+      hasSkillManager: !!input.deps.skillManager,
+    },
+  )
+}
+
+async function runBetsyImpl(input: RunBetsyInput): Promise<BetsyResponse> {
   const { workspaceId, userMessage, channel, deps } = input
   const ttsSpeak = deps.ttsSpeak ?? realSpeak
 
@@ -449,6 +464,20 @@ export interface RunBetsyStreamResult {
  * the non-streaming runBetsy.
  */
 export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStreamResult> {
+  return withSpan(
+    'betsy.runBetsyStream',
+    () => runBetsyStreamImpl(input),
+    {
+      workspaceId: input.workspaceId,
+      channel: input.channel,
+      userMsgLen: input.userMessage.length,
+      hasMcpRegistry: !!input.deps.mcpRegistry,
+      hasSkillManager: !!input.deps.skillManager,
+    },
+  )
+}
+
+async function runBetsyStreamImpl(input: RunBetsyInput): Promise<RunBetsyStreamResult> {
   const { workspaceId, userMessage, channel, deps } = input
 
   const workspace = await deps.wsRepo.findById(workspaceId)
