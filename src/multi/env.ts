@@ -51,6 +51,7 @@ const envSchema = z.object({
   // Auto-summarizer thresholds
   BC_SUMMARIZER_THRESHOLD: z.coerce.number().int().min(20).default(150),
   BC_SUMMARIZER_KEEP_RECENT: z.coerce.number().int().min(10).default(50),
+  BC_SUMMARIZER_DELAY_MS: z.coerce.number().int().min(0).default(30_000),
 })
 
 export type Env = z.infer<typeof envSchema>

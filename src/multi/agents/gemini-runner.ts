@@ -12,6 +12,41 @@ import { zodToJsonSchema } from 'zod-to-json-schema'
 import type { MemoryTool } from './tools/memory-tools.js'
 import { log } from '../observability/logger.js'
 
+/**
+ * Retry a Gemini API call on 429 RESOURCE_EXHAUSTED with exponential backoff.
+ * Vertex AI free tier allows ~5 req/min — this lets short bursts succeed.
+ */
+async function withRateLimitRetry<T>(
+  fn: () => Promise<T>,
+  opts: { maxAttempts?: number; initialDelayMs?: number; maxDelayMs?: number } = {},
+): Promise<T> {
+  const maxAttempts = opts.maxAttempts ?? 5
+  const initialDelay = opts.initialDelayMs ?? 2000
+  const maxDelay = opts.maxDelayMs ?? 30_000
+  let attempt = 0
+  let delay = initialDelay
+  for (;;) {
+    try {
+      return await fn()
+    } catch (e: any) {
+      const status = e?.status ?? e?.error_code ?? e?.response?.status
+      const message = String(e?.message ?? e ?? '')
+      const is429 =
+        status === 429 ||
+        message.includes('429') ||
+        message.includes('RESOURCE_EXHAUSTED') ||
+        message.includes('Resource exhausted')
+      attempt++
+      if (!is429 || attempt >= maxAttempts) {
+        throw e
+      }
+      log().warn('gemini: 429, backing off', { attempt, delayMs: delay })
+      await new Promise((r) => setTimeout(r, delay))
+      delay = Math.min(delay * 2, maxDelay)
+    }
+  }
+}
+
 export interface GeminiRunResult {
   text: string
   toolCalls: Array<{ name: string; args: unknown; result?: unknown; error?: string }>
@@ -75,14 +110,16 @@ export async function runWithGeminiTools(
   let finalText = ''
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
-    const resp: any = await gemini.models.generateContent({
-      model: modelName,
-      contents,
-      config: {
-        systemInstruction: instruction,
-        ...(geminiTools ? { tools: geminiTools } : {}),
-      } as any,
-    })
+    const resp: any = await withRateLimitRetry(() =>
+      gemini.models.generateContent({
+        model: modelName,
+        contents,
+        config: {
+          systemInstruction: instruction,
+          ...(geminiTools ? { tools: geminiTools } : {}),
+        } as any,
+      }),
+    )
 
     const usage = resp.usageMetadata ?? {}
     totalTokens += (usage.totalTokenCount as number) ?? 0
@@ -251,14 +288,16 @@ export async function runWithGeminiToolsStream(
   const runLoop = async () => {
     try {
       for (let turn = 0; turn < MAX_TURNS; turn++) {
-        const stream: any = await gemini.models.generateContentStream({
-          model: modelName,
-          contents,
-          config: {
-            systemInstruction: instruction,
-            ...(geminiTools ? { tools: geminiTools } : {}),
-          } as any,
-        })
+        const stream: any = await withRateLimitRetry(() =>
+          gemini.models.generateContentStream({
+            model: modelName,
+            contents,
+            config: {
+              systemInstruction: instruction,
+              ...(geminiTools ? { tools: geminiTools } : {}),
+            } as any,
+          }),
+        )
 
         let modelTurnText = ''
         const modelTurnFunctionCalls: any[] = []

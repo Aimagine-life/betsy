@@ -18,24 +18,29 @@ import { Summarizer } from '../memory/summarizer.js'
 const SUMMARIZER_THRESHOLD = Number(process.env.BC_SUMMARIZER_THRESHOLD ?? 150)
 const SUMMARIZER_KEEP_RECENT = Number(process.env.BC_SUMMARIZER_KEEP_RECENT ?? 50)
 
+const SUMMARIZER_DELAY_MS = Number(process.env.BC_SUMMARIZER_DELAY_MS ?? 30_000)
+
 function fireAndForgetSummarize(deps: RunBetsyDeps, workspaceId: string): void {
   const summarizer = new Summarizer({
     gemini: deps.gemini,
     convRepo: deps.convRepo,
     factsRepo: deps.factsRepo,
   })
-  void summarizer
-    .maybeSummarize({
-      workspaceId,
-      threshold: SUMMARIZER_THRESHOLD,
-      keepRecent: SUMMARIZER_KEEP_RECENT,
-    })
-    .catch((e) =>
-      log().error('summarizer: background run failed', {
+  // Delay so we don't compete with the just-finished response loop for rate limit slots
+  setTimeout(() => {
+    void summarizer
+      .maybeSummarize({
         workspaceId,
-        error: e instanceof Error ? e.message : String(e),
-      }),
-    )
+        threshold: SUMMARIZER_THRESHOLD,
+        keepRecent: SUMMARIZER_KEEP_RECENT,
+      })
+      .catch((e) =>
+        log().error('summarizer: background run failed', {
+          workspaceId,
+          error: e instanceof Error ? e.message : String(e),
+        }),
+      )
+  }, SUMMARIZER_DELAY_MS).unref()
 }
 
 export interface RunBetsyDeps {
