@@ -100,6 +100,7 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
   const memoryTools = createMemoryTools({
     factsRepo: deps.factsRepo,
     convRepo: deps.convRepo,
+    gemini: deps.gemini,
     workspaceId,
   })
   const reminderTools = createReminderTools({
@@ -240,6 +241,7 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
   const memoryTools = createMemoryTools({
     factsRepo: deps.factsRepo,
     convRepo: deps.convRepo,
+    gemini: deps.gemini,
     workspaceId,
   })
   const reminderTools = createReminderTools({
