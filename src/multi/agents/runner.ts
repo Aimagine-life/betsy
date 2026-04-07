@@ -1,0 +1,133 @@
+import type { GoogleGenAI } from '@google/genai'
+import type { WorkspaceRepo } from '../workspaces/repo.js'
+import type { PersonaRepo } from '../personas/repo.js'
+import type { FactsRepo } from '../memory/facts-repo.js'
+import type { ConversationRepo } from '../memory/conversation-repo.js'
+import type { RemindersRepo } from '../reminders/repo.js'
+import type { S3Storage } from '../storage/s3.js'
+import { loadAgentContext } from './context-loader.js'
+import { createMemoryTools } from './tools/memory-tools.js'
+import { createReminderTools } from './tools/reminder-tools.js'
+import { createSelfieTool } from './tools/selfie-tool.js'
+import { createBetsyAgent } from './betsy-factory.js'
+import { speak as realSpeak } from '../gemini/tts.js'
+
+export interface RunBetsyDeps {
+  wsRepo: WorkspaceRepo
+  personaRepo: PersonaRepo
+  factsRepo: FactsRepo
+  convRepo: ConversationRepo
+  remindersRepo: RemindersRepo
+  s3: S3Storage
+  gemini: GoogleGenAI
+  /**
+   * Function that actually runs the ADK agent and returns text.
+   * Injected for testability; production wires it to ADK's agent.run().
+   */
+  agentRunner: (
+    agent: any,
+    userMessage: string,
+  ) => Promise<{
+    text: string
+    toolCalls: unknown[]
+    tokensUsed: number
+  }>
+  /** Injected for testability */
+  ttsSpeak?: typeof realSpeak
+}
+
+export interface RunBetsyInput {
+  workspaceId: string
+  userMessage: string
+  channel: 'telegram' | 'max'
+  deps: RunBetsyDeps
+}
+
+export interface BetsyResponse {
+  text: string
+  audio?: { base64: string; mimeType: string }
+  toolCalls: unknown[]
+  tokensUsed: number
+}
+
+export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
+  const { workspaceId, userMessage, channel, deps } = input
+  const ttsSpeak = deps.ttsSpeak ?? realSpeak
+
+  const workspace = await deps.wsRepo.findById(workspaceId)
+  if (!workspace) throw new Error(`workspace not found: ${workspaceId}`)
+
+  const persona = await deps.personaRepo.findByWorkspace(workspaceId)
+  if (!persona) throw new Error(`persona not found for workspace: ${workspaceId}`)
+
+  const context = await loadAgentContext({
+    factsRepo: deps.factsRepo,
+    convRepo: deps.convRepo,
+    workspaceId,
+    factLimit: 50,
+    historyLimit: 20,
+  })
+
+  const memoryTools = createMemoryTools({
+    factsRepo: deps.factsRepo,
+    workspaceId,
+  })
+  const reminderTools = createReminderTools({
+    remindersRepo: deps.remindersRepo,
+    workspaceId,
+    currentChannel: channel,
+  })
+  const selfieTool = createSelfieTool({
+    personaRepo: deps.personaRepo,
+    s3: deps.s3,
+    gemini: deps.gemini,
+    workspaceId,
+  })
+
+  const agent = createBetsyAgent({
+    workspace,
+    persona,
+    ownerFacts: context.factContents,
+    tools: { memoryTools, reminderTools, selfieTool },
+    currentChannel: channel,
+  })
+
+  // Store user message first
+  await deps.convRepo.append(workspaceId, {
+    channel,
+    role: 'user',
+    content: userMessage,
+  } as any)
+
+  const result = await deps.agentRunner(agent, userMessage)
+
+  // Store assistant reply
+  await deps.convRepo.append(workspaceId, {
+    channel,
+    role: 'assistant',
+    content: result.text,
+    toolCalls: result.toolCalls,
+    tokensUsed: result.tokensUsed,
+  } as any)
+
+  // Decide whether to speak
+  const voiceBehavior = persona.behaviorConfig.voice
+  const shouldSpeak = voiceBehavior === 'voice_always'
+
+  let audio: BetsyResponse['audio'] | undefined
+  if (shouldSpeak) {
+    try {
+      const tts = await ttsSpeak(deps.gemini, result.text, persona.voiceId)
+      audio = { base64: tts.audioBase64, mimeType: tts.mimeType }
+    } catch {
+      // TTS failure is non-fatal — return text only
+    }
+  }
+
+  return {
+    text: result.text,
+    audio,
+    toolCalls: result.toolCalls,
+    tokensUsed: result.tokensUsed,
+  }
+}
