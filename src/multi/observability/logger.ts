@@ -1,4 +1,5 @@
 import pino from 'pino'
+import { getCurrentTraceId } from './trace-context.js'
 
 const SECRET_KEYS = /^(token|secret|password|api[_-]?key|jwt|access[_-]?key|auth)$/i
 
@@ -43,7 +44,19 @@ function wrap(pinoInstance: pino.Logger): Logger {
 }
 
 export function createLogger(level: LogLevel = 'info'): Logger {
-  return wrap(pino({ level, base: undefined, timestamp: pino.stdTimeFunctions.isoTime }))
+  return wrap(
+    pino({
+      level,
+      base: undefined,
+      timestamp: pino.stdTimeFunctions.isoTime,
+      // Automatically tag every log line with the current traceId when the
+      // call happens inside a `runWithTraceId(...)` scope (set by `withSpan`).
+      mixin: () => {
+        const t = getCurrentTraceId()
+        return t ? { traceId: t } : {}
+      },
+    }),
+  )
 }
 
 let rootLogger: Logger | null = null
