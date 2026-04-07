@@ -45,8 +45,8 @@ export async function startMultiServer(): Promise<void> {
   buildGemini(env.GEMINI_API_KEY)
   logger.info('gemini client initialized', {
     models: [
-      'gemini-2.5-flash',
-      'gemini-2.5-pro',
+      'gemini-flash-latest',
+      'gemini-pro-latest',
       'gemini-3.1-flash-image-preview',
       'gemini-2.5-flash-preview-tts',
     ],

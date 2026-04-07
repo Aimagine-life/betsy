@@ -72,7 +72,7 @@ describe('createBetsyAgent', () => {
       currentChannel: 'telegram',
     })
     expect(agent.name).toMatch(/betsy/i)
-    expect(getModel(agent)).toContain('gemini-2.5-flash')
+    expect(getModel(agent)).toContain('gemini-flash-latest')
   })
 
   it('uses Pro model when plan is pro', () => {
@@ -83,7 +83,7 @@ describe('createBetsyAgent', () => {
       tools: noopTools,
       currentChannel: 'telegram',
     })
-    expect(getModel(agent)).toContain('gemini-2.5-pro')
+    expect(getModel(agent)).toContain('gemini-pro-latest')
   })
 
   it('uses Flash for trial and personal', () => {
@@ -95,7 +95,7 @@ describe('createBetsyAgent', () => {
         tools: noopTools,
         currentChannel: 'telegram',
       })
-      expect(getModel(agent)).toContain('gemini-2.5-flash')
+      expect(getModel(agent)).toContain('gemini-flash-latest')
     }
   })
 })

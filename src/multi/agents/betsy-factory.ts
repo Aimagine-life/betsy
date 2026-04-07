@@ -20,13 +20,15 @@ export interface CreateBetsyAgentInput {
 }
 
 function pickModel(plan: Workspace['plan']): string {
-  return plan === 'pro' ? 'gemini-2.5-pro' : 'gemini-2.5-flash'
+  return plan === 'pro' ? 'gemini-pro-latest' : 'gemini-flash-latest'
 }
 
 /**
  * Creates an ADK LlmAgent configured for a specific workspace.
  *
- * Model selection: gemini-2.5-flash for trial/personal, gemini-2.5-pro for pro.
+ * Model selection: gemini-flash-latest for trial/personal, gemini-pro-latest for pro.
+ * Google auto-resolves `-latest` aliases to the newest stable Gemini model
+ * (currently Gemini 3 Flash/Pro preview — updates without code changes).
  *
  * Tools are bound to the workspaceId by closing over it in the factory of each
  * tool (see createMemoryTools etc.). This factory only combines them into the
