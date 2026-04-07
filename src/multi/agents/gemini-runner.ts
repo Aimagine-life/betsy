@@ -61,7 +61,15 @@ function stripJsonSchemaForGemini(schema: any): any {
   const out: any = {}
   for (const [k, v] of Object.entries(schema)) {
     // Gemini's Schema doesn't accept $schema/additionalProperties/$ref keywords
-    if (k === '$schema' || k === 'additionalProperties' || k === '$ref' || k === 'definitions') continue
+    // nor JSON Schema draft-07 exclusive range keywords (exclusiveMinimum/Maximum)
+    if (
+      k === '$schema' ||
+      k === 'additionalProperties' ||
+      k === '$ref' ||
+      k === 'definitions' ||
+      k === 'exclusiveMinimum' ||
+      k === 'exclusiveMaximum'
+    ) continue
     out[k] = stripJsonSchemaForGemini(v)
   }
   return out
