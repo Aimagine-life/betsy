@@ -339,7 +339,9 @@ export class BotRouter {
             channel: ev.channel,
             role: 'user',
             content: ev.text,
-          } as any)
+            chatId: ev.chatId,
+            externalMessageId: /^\d+$/.test(ev.messageId) ? Number(ev.messageId) : null,
+          })
         } catch (e) {
           log().error('inbound: failed to persist user message', {
             workspaceId: workspace.id,
