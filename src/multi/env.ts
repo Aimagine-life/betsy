@@ -47,6 +47,10 @@ const envSchema = z.object({
   // Memory window — Gemini 2.5 supports 1M context, so we can be generous
   BC_HISTORY_LIMIT: z.coerce.number().int().min(10).max(1000).default(200),
   BC_FACT_LIMIT: z.coerce.number().int().min(10).max(500).default(100),
+
+  // Auto-summarizer thresholds
+  BC_SUMMARIZER_THRESHOLD: z.coerce.number().int().min(20).default(150),
+  BC_SUMMARIZER_KEEP_RECENT: z.coerce.number().int().min(10).default(50),
 })
 
 export type Env = z.infer<typeof envSchema>

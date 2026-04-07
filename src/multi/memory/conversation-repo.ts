@@ -69,13 +69,61 @@ export class ConversationRepo {
 
   async recent(workspaceId: string, limit: number): Promise<Conversation[]> {
     return withWorkspace(this.pool, workspaceId, async (client) => {
+      // Skip messages that have been summarized into a long-term summary fact
       const { rows } = await client.query(
         `select * from bc_conversation
+         where coalesce(meta->>'summarized', 'false') <> 'true'
          order by created_at desc
          limit $1`,
         [limit],
       )
       return rows.map(rowToConversation)
+    })
+  }
+
+  /**
+   * Returns the count of NOT-yet-summarized messages — used by the summarizer
+   * to decide whether the threshold has been crossed.
+   */
+  async countActive(workspaceId: string): Promise<number> {
+    return withWorkspace(this.pool, workspaceId, async (client) => {
+      const { rows } = await client.query(
+        `select count(*)::int as c
+         from bc_conversation
+         where coalesce(meta->>'summarized', 'false') <> 'true'`,
+      )
+      return rows[0].c as number
+    })
+  }
+
+  /**
+   * Returns the OLDEST not-yet-summarized messages, oldest first.
+   * The summarizer takes the first N to fold into the summary, leaving the
+   * remaining `keepRecent` newest messages alive in the chat history.
+   */
+  async oldestActive(workspaceId: string, limit: number): Promise<Conversation[]> {
+    return withWorkspace(this.pool, workspaceId, async (client) => {
+      const { rows } = await client.query(
+        `select * from bc_conversation
+         where coalesce(meta->>'summarized', 'false') <> 'true'
+         order by created_at asc
+         limit $1`,
+        [limit],
+      )
+      return rows.map(rowToConversation)
+    })
+  }
+
+  /** Marks the given message ids as summarized. */
+  async markSummarized(workspaceId: string, ids: string[]): Promise<void> {
+    if (ids.length === 0) return
+    await withWorkspace(this.pool, workspaceId, async (client) => {
+      await client.query(
+        `update bc_conversation
+         set meta = coalesce(meta, '{}'::jsonb) || '{"summarized":"true"}'::jsonb
+         where id = any($1::uuid[])`,
+        [ids],
+      )
     })
   }
 

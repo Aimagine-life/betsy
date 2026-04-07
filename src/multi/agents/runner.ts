@@ -13,6 +13,30 @@ import { createBetsyAgent } from './betsy-factory.js'
 import { speak as realSpeak } from '../gemini/tts.js'
 import { runWithGeminiToolsStream } from './gemini-runner.js'
 import { log } from '../observability/logger.js'
+import { Summarizer } from '../memory/summarizer.js'
+
+const SUMMARIZER_THRESHOLD = Number(process.env.BC_SUMMARIZER_THRESHOLD ?? 150)
+const SUMMARIZER_KEEP_RECENT = Number(process.env.BC_SUMMARIZER_KEEP_RECENT ?? 50)
+
+function fireAndForgetSummarize(deps: RunBetsyDeps, workspaceId: string): void {
+  const summarizer = new Summarizer({
+    gemini: deps.gemini,
+    convRepo: deps.convRepo,
+    factsRepo: deps.factsRepo,
+  })
+  void summarizer
+    .maybeSummarize({
+      workspaceId,
+      threshold: SUMMARIZER_THRESHOLD,
+      keepRecent: SUMMARIZER_KEEP_RECENT,
+    })
+    .catch((e) =>
+      log().error('summarizer: background run failed', {
+        workspaceId,
+        error: e instanceof Error ? e.message : String(e),
+      }),
+    )
+}
 
 export interface RunBetsyDeps {
   wsRepo: WorkspaceRepo
@@ -150,6 +174,9 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
     })
     throw e
   }
+
+  // Background: rolling-window summarization (don't block reply)
+  fireAndForgetSummarize(deps, workspaceId)
 
   // Decide whether to speak
   const voiceBehavior = persona.behaviorConfig.voice
@@ -291,6 +318,8 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
         error: e instanceof Error ? e.message : String(e),
       })
     }
+    // Background: rolling-window summarization (don't block reply)
+    fireAndForgetSummarize(deps, workspaceId)
     return {
       text: result.text,
       toolCalls: result.toolCalls,
