@@ -108,4 +108,8 @@ export class MaxAdapter implements ChannelAdapter {
   onMessage(handler: (ev: InboundEvent) => Promise<void>): void {
     this.handler = handler
   }
+
+  async sendTyping(_chatId: string): Promise<void> {
+    // MAX API: not implemented yet, noop
+  }
 }

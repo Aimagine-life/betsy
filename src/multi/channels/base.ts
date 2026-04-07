@@ -27,4 +27,5 @@ export interface ChannelAdapter {
   stop(): Promise<void>
   sendMessage(msg: OutboundMessage): Promise<void>
   onMessage(handler: (ev: InboundEvent) => Promise<void>): void
+  sendTyping?(chatId: string): Promise<void>
 }

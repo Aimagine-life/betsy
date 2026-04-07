@@ -24,6 +24,25 @@ export interface BotRouterDeps {
 
 const LINK_CODE_RE = /^\s*(\d{6})\s*$/
 
+function startTypingLoop(channel: ChannelAdapter, chatId: string): () => void {
+  if (!channel.sendTyping) return () => {}
+  let stopped = false
+  const tick = async () => {
+    if (stopped) return
+    try {
+      await channel.sendTyping!(chatId)
+    } catch {
+      // ignore
+    }
+  }
+  void tick()
+  const interval = setInterval(tick, 4000)
+  return () => {
+    stopped = true
+    clearInterval(interval)
+  }
+}
+
 export class BotRouter {
   constructor(private deps: BotRouterDeps) {}
 
@@ -112,12 +131,18 @@ export class BotRouter {
 
       // Normal message → runBetsy
       log().info('routing: runBetsy', { workspaceId: workspace.id })
-      const response = await this.deps.runBetsyFn({
-        workspaceId: workspace.id,
-        userMessage: ev.text,
-        channel: ev.channel,
-        deps: this.deps.runBetsyDeps,
-      })
+      const stopTyping = startTypingLoop(channel, ev.chatId)
+      let response
+      try {
+        response = await this.deps.runBetsyFn({
+          workspaceId: workspace.id,
+          userMessage: ev.text,
+          channel: ev.channel,
+          deps: this.deps.runBetsyDeps,
+        })
+      } finally {
+        stopTyping()
+      }
       log().info('runBetsy returned', {
         workspaceId: workspace.id,
         textLen: response.text?.length ?? 0,

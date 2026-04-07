@@ -84,4 +84,12 @@ export class TelegramAdapter implements ChannelAdapter {
   onMessage(handler: (ev: InboundEvent) => Promise<void>): void {
     this.handler = handler
   }
+
+  async sendTyping(chatId: string): Promise<void> {
+    try {
+      await this.bot.api.sendChatAction(Number(chatId), 'typing')
+    } catch (e) {
+      // not fatal — just no indicator
+    }
+  }
 }

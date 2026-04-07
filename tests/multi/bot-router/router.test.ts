@@ -57,8 +57,8 @@ function mockDeps(overrides: any = {}) {
     }),
     runBetsyDeps: {} as any,
     channels: {
-      telegram: { sendMessage: vi.fn(), name: 'telegram' } as any,
-      max: { sendMessage: vi.fn(), name: 'max' } as any,
+      telegram: { sendMessage: vi.fn(), sendTyping: vi.fn(), name: 'telegram' } as any,
+      max: { sendMessage: vi.fn(), sendTyping: vi.fn(), name: 'max' } as any,
     },
     ...overrides,
   }
@@ -82,6 +82,7 @@ describe('BotRouter', () => {
     expect(deps.wsRepo.upsertForTelegram).toHaveBeenCalledWith(123)
     expect(deps.runBetsyFn).toHaveBeenCalled()
     expect(deps.channels.telegram.sendMessage).toHaveBeenCalled()
+    expect(deps.channels.telegram.sendTyping).toHaveBeenCalled()
   })
 
   it('routes /start command through command handler', async () => {
