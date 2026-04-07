@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { createOAuthTools } from '../../../src/multi/oauth/oauth-tools.js'
 import type { OAuthRepo, ListedToken } from '../../../src/multi/oauth/repo.js'
 import type { McpServersRepo } from '../../../src/multi/agents/mcp/repo.js'
+import { BUILTIN_MCP_SERVERS } from '../../../src/multi/agents/mcp/builtin.js'
 
 function mkRepo(tokens: ListedToken[] = []): OAuthRepo {
   return {
@@ -38,7 +39,7 @@ describe('oauth-tools: list_integrations', () => {
       mcpServersRepo: mkMcpRepo(),
     })
     const res: any = await getTool(tools, 'list_integrations').execute({})
-    expect(res.integrations).toHaveLength(6)
+    expect(res.integrations).toHaveLength(BUILTIN_MCP_SERVERS.length)
     for (const i of res.integrations) expect(i.status).toBe('available')
   })
 
