@@ -1,0 +1,25 @@
+name: website_monitor
+description: Проверка изменения страницы — простой пример с условием.
+trigger:
+  type: keyword
+  keywords:
+    - проверь сайт
+    - монитор сайта
+steps:
+  - kind: tool
+    tool: web_search
+    params:
+      query: "site changes today"
+    saveAs: result
+  - kind: condition
+    if: vars.result != null
+    then:
+      - kind: prompt
+        prompt: |
+          Кратко расскажи что изменилось на основе данных:
+          {{vars.result}}
+        saveAs: summary
+    else:
+      - kind: prompt
+        prompt: "Скажи что изменений не нашлось."
+        saveAs: summary
