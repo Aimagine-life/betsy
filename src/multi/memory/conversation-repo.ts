@@ -114,6 +114,28 @@ export class ConversationRepo {
     await this.setEmbedding(workspaceId, id, vec)
   }
 
+  /**
+   * List messages created after `since`, oldest first.  Used by the Wave 2A
+   * LearnerAgent to analyse the last 24 hours of dialogue.  Narrow and
+   * additive — does not interact with the summarizer's "active" flag.
+   */
+  async listSince(
+    workspaceId: string,
+    since: Date,
+    limit: number,
+  ): Promise<Conversation[]> {
+    return withWorkspace(this.pool, workspaceId, async (client) => {
+      const { rows } = await client.query(
+        `select * from bc_conversation
+         where created_at >= $1
+         order by created_at asc
+         limit $2`,
+        [since.toISOString(), limit],
+      )
+      return rows.map(rowToConversation)
+    })
+  }
+
   async recent(workspaceId: string, limit: number): Promise<Conversation[]> {
     return withWorkspace(this.pool, workspaceId, async (client) => {
       // Skip messages that have been summarized into a long-term summary fact

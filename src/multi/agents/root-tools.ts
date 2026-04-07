@@ -32,6 +32,8 @@ import { createWebSearchTool } from './tools/web-search-tool.js'
 import { createFetchUrlTool } from './tools/fetch-url-tool.js'
 import { createRecallTools } from './tools/recall-tools.js'
 import { createSkillTools } from '../skills/skill-tool.js'
+import { createLearnerTools } from '../learner/learner-tools.js'
+import type { CandidatesRepo } from '../learner/candidates-repo.js'
 import {
   buildDefaultRegistry,
   createAllDelegationTools,
@@ -52,6 +54,10 @@ export interface BuildRootToolsDeps {
   s3: S3Storage
   gemini: GoogleGenAI
   skillManager?: SkillManager
+  // WAVE2-MERGE: Waves 2B (critic) and 2C (feedback) also add optional deps here.
+  /** Wave 2A — LearnerAgent candidates repo. When present, root agent gets
+   *  list/approve/reject candidate tools. */
+  learnerCandidatesRepo?: CandidatesRepo
 }
 
 export interface BuildRootToolsOptions {
@@ -172,10 +178,21 @@ export function buildRootTools(
     })
   }
 
+  // Wave 2A — learner candidate tools (root-only). Purely opt-in: absent
+  // when deps.learnerCandidatesRepo is undefined (e.g. in tests that don't
+  // wire the Learner).
+  const learnerTools: MemoryTool[] = deps.learnerCandidatesRepo
+    ? createLearnerTools({
+        workspaceId,
+        candidatesRepo: deps.learnerCandidatesRepo,
+      })
+    : []
+
   const allRootTools: MemoryTool[] = [
     ...leafTools,
     ...delegationTools,
     ...skillTools,
+    ...learnerTools,
   ]
 
   return { leafTools, delegationTools, skillTools, allRootTools }
