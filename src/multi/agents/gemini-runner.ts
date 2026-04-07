@@ -10,6 +10,7 @@
 import type { GoogleGenAI } from '@google/genai'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 import type { MemoryTool } from './tools/memory-tools.js'
+import { log } from '../observability/logger.js'
 
 export interface GeminiRunResult {
   text: string
@@ -117,7 +118,9 @@ export async function runWithGeminiTools(
         continue
       }
       try {
+        log().info('tool: executing', { name: fc.name, args: fc.args })
         const result = await tool.execute(fc.args ?? {})
+        log().info('tool: ok', { name: fc.name, result })
         toolCalls.push({ name: fc.name, args: fc.args, result })
         responseParts.push({
           functionResponse: {
@@ -127,6 +130,7 @@ export async function runWithGeminiTools(
         })
       } catch (e) {
         const err = (e as Error).message
+        log().error('tool: failed', { name: fc.name, args: fc.args, error: err, stack: (e as Error).stack })
         toolCalls.push({ name: fc.name, args: fc.args, error: err })
         responseParts.push({
           functionResponse: { name: fc.name, response: { error: err } },
@@ -304,7 +308,9 @@ export async function runWithGeminiToolsStream(
             continue
           }
           try {
+            log().info('tool: executing', { name: fc.name, args: fc.args })
             const result = await tool.execute(fc.args ?? {})
+            log().info('tool: ok', { name: fc.name, result })
             collectedToolCalls.push({ name: fc.name, args: fc.args, result })
             responseParts.push({
               functionResponse: {
@@ -316,6 +322,7 @@ export async function runWithGeminiToolsStream(
             })
           } catch (e) {
             const err = (e as Error).message
+            log().error('tool: failed', { name: fc.name, args: fc.args, error: err, stack: (e as Error).stack })
             collectedToolCalls.push({ name: fc.name, args: fc.args, error: err })
             responseParts.push({
               functionResponse: { name: fc.name, response: { error: err } },
