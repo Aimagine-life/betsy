@@ -3,6 +3,7 @@ import { log } from './observability/logger.js'
 import { buildPool, closePool } from './db/pool.js'
 import { runMigrations } from './db/migrate.js'
 import { buildS3Storage } from './storage/s3.js'
+import { buildGemini } from './gemini/client.js'
 import { startHealthzServer } from './http/healthz.js'
 
 export async function startMultiServer(): Promise<void> {
@@ -39,6 +40,17 @@ export async function startMultiServer(): Promise<void> {
   } else {
     logger.warn('s3 credentials missing, storage disabled')
   }
+
+  // Gemini client
+  buildGemini(env.GEMINI_API_KEY)
+  logger.info('gemini client initialized', {
+    models: [
+      'gemini-2.5-flash',
+      'gemini-2.5-pro',
+      'gemini-3.1-flash-image-preview',
+      'gemini-2.5-flash-preview-tts',
+    ],
+  })
 
   // Healthz
   const healthzServer = startHealthzServer(env.BC_HEALTHZ_PORT, pool)
