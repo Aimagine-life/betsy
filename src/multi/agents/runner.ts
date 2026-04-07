@@ -11,6 +11,7 @@ import { createReminderTools } from './tools/reminder-tools.js'
 import { createSelfieTool } from './tools/selfie-tool.js'
 import { createBetsyAgent } from './betsy-factory.js'
 import { speak as realSpeak } from '../gemini/tts.js'
+import { log } from '../observability/logger.js'
 
 export interface RunBetsyDeps {
   wsRepo: WorkspaceRepo
@@ -92,23 +93,59 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
     currentChannel: channel,
   })
 
-  // Store user message first
-  await deps.convRepo.append(workspaceId, {
-    channel,
-    role: 'user',
-    content: userMessage,
-  } as any)
+  log().info('runBetsy: start', { workspaceId, channel, userMsgLen: userMessage.length })
 
-  const result = await deps.agentRunner(agent, userMessage)
+  // Store user message first
+  try {
+    await deps.convRepo.append(workspaceId, {
+      channel,
+      role: 'user',
+      content: userMessage,
+    } as any)
+    log().info('runBetsy: user message appended', { workspaceId })
+  } catch (e) {
+    log().error('runBetsy: append user failed', {
+      workspaceId,
+      error: e instanceof Error ? e.message : String(e),
+    })
+    throw e
+  }
+
+  let result: { text: string; toolCalls: unknown[]; tokensUsed: number }
+  try {
+    result = await deps.agentRunner(agent, userMessage)
+    log().info('runBetsy: agent done', {
+      workspaceId,
+      textLen: result.text?.length ?? 0,
+      toolCalls: Array.isArray(result.toolCalls) ? result.toolCalls.length : 0,
+      tokensUsed: result.tokensUsed,
+    })
+  } catch (e) {
+    log().error('runBetsy: agentRunner failed', {
+      workspaceId,
+      error: e instanceof Error ? e.message : String(e),
+      stack: e instanceof Error ? e.stack : undefined,
+    })
+    throw e
+  }
 
   // Store assistant reply
-  await deps.convRepo.append(workspaceId, {
-    channel,
-    role: 'assistant',
-    content: result.text,
-    toolCalls: result.toolCalls,
-    tokensUsed: result.tokensUsed,
-  } as any)
+  try {
+    await deps.convRepo.append(workspaceId, {
+      channel,
+      role: 'assistant',
+      content: result.text,
+      toolCalls: result.toolCalls,
+      tokensUsed: result.tokensUsed,
+    } as any)
+    log().info('runBetsy: assistant message appended', { workspaceId })
+  } catch (e) {
+    log().error('runBetsy: append assistant failed', {
+      workspaceId,
+      error: e instanceof Error ? e.message : String(e),
+    })
+    throw e
+  }
 
   // Decide whether to speak
   const voiceBehavior = persona.behaviorConfig.voice

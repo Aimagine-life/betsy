@@ -10,6 +10,7 @@ import {
   isOnboardingComplete,
 } from './onboarding-flow.js'
 import { handleCommand } from './commands.js'
+import { log } from '../observability/logger.js'
 
 export interface BotRouterDeps {
   wsRepo: WorkspaceRepo
@@ -34,76 +35,127 @@ export class BotRouter {
   }
 
   async handleInbound(ev: InboundEvent): Promise<void> {
-    const channel = this.deps.channels[ev.channel]
-    if (!channel) return
-
-    // Resolve workspace
-    const workspace =
-      ev.channel === 'telegram'
-        ? await this.deps.wsRepo.upsertForTelegram(Number(ev.userId))
-        : await this.deps.wsRepo.upsertForMax(Number(ev.userId))
-
-    await this.deps.wsRepo.updateLastActiveChannel(workspace.id, ev.channel)
-
-    // Try link code match
-    const linkMatch = ev.text.match(LINK_CODE_RE)
-    if (linkMatch && workspace.status !== 'onboarding') {
-      const result = await this.deps.linkingSvc.verifyAndLink(linkMatch[1], {
-        fromChannel: ev.channel,
-        newChannelUserId: Number(ev.userId),
-      })
-      if (result.success) {
-        await channel.sendMessage({
-          chatId: ev.chatId,
-          text: `✅ Канал ${ev.channel} подключён! Теперь мы с тобой на связи и здесь тоже 💙`,
-        })
-        return
-      } else if (result.reason === 'invalid_or_expired') {
-        // silently fall through — maybe user just sent a 6-digit number
-      } else {
-        await channel.sendMessage({
-          chatId: ev.chatId,
-          text: `⚠️ Не получилось связать: ${result.reason}`,
-        })
-        return
-      }
-    }
-
-    // Onboarding
-    if (workspace.status === 'onboarding' || !isOnboardingComplete(workspaceToProfile(workspace))) {
-      await this.handleOnboarding(ev, workspace, channel)
-      return
-    }
-
-    // Commands
-    if (ev.text.startsWith('/')) {
-      const result = await handleCommand(ev.text, workspace as any, {
-        wsRepo: this.deps.wsRepo,
-        factsRepo: this.deps.factsRepo,
-        linkingSvc: this.deps.linkingSvc,
-      })
-      if (result) {
-        await channel.sendMessage({ chatId: ev.chatId, text: result.text })
-        return
-      }
-    }
-
-    // Normal message → runBetsy
-    const response = await this.deps.runBetsyFn({
-      workspaceId: workspace.id,
-      userMessage: ev.text,
+    log().info('inbound received', {
       channel: ev.channel,
-      deps: this.deps.runBetsyDeps,
+      userId: String(ev.userId),
+      chatId: String(ev.chatId),
+      textLen: ev.text?.length ?? 0,
+      hasVoice: Boolean((ev as any).voice),
     })
+    try {
+      const channel = this.deps.channels[ev.channel]
+      if (!channel) {
+        log().warn('inbound: no channel adapter', { channel: ev.channel })
+        return
+      }
 
-    await channel.sendMessage({
-      chatId: ev.chatId,
-      text: response.text,
-      audio: response.audio && {
-        base64: response.audio.base64,
-        mimeType: response.audio.mimeType,
-      },
-    })
+      // Resolve workspace
+      const workspace =
+        ev.channel === 'telegram'
+          ? await this.deps.wsRepo.upsertForTelegram(Number(ev.userId))
+          : await this.deps.wsRepo.upsertForMax(Number(ev.userId))
+
+      log().info('workspace resolved', {
+        workspaceId: workspace.id,
+        status: workspace.status,
+        displayName: workspace.displayName,
+      })
+
+      await this.deps.wsRepo.updateLastActiveChannel(workspace.id, ev.channel)
+
+      // Try link code match
+      const linkMatch = ev.text.match(LINK_CODE_RE)
+      if (linkMatch && workspace.status !== 'onboarding') {
+        const result = await this.deps.linkingSvc.verifyAndLink(linkMatch[1], {
+          fromChannel: ev.channel,
+          newChannelUserId: Number(ev.userId),
+        })
+        if (result.success) {
+          await channel.sendMessage({
+            chatId: ev.chatId,
+            text: `✅ Канал ${ev.channel} подключён! Теперь мы с тобой на связи и здесь тоже 💙`,
+          })
+          return
+        } else if (result.reason === 'invalid_or_expired') {
+          // silently fall through — maybe user just sent a 6-digit number
+        } else {
+          await channel.sendMessage({
+            chatId: ev.chatId,
+            text: `⚠️ Не получилось связать: ${result.reason}`,
+          })
+          return
+        }
+      }
+
+      // Commands for active workspace go through commands handler
+      // (onboarding flow has its own / handling and shouldn't intercept commands here)
+      if (ev.text.startsWith('/') && workspace.status !== 'onboarding') {
+        log().info('routing: command (active)', { workspaceId: workspace.id, cmd: ev.text.split(' ')[0] })
+        const result = await handleCommand(ev.text, workspace as any, {
+          wsRepo: this.deps.wsRepo,
+          factsRepo: this.deps.factsRepo,
+          linkingSvc: this.deps.linkingSvc,
+        })
+        if (result) {
+          await channel.sendMessage({ chatId: ev.chatId, text: result.text })
+          return
+        }
+      }
+
+      // Onboarding only when status is explicitly 'onboarding'.
+      // Trust the workspace status — if active, onboarding is done.
+      if (workspace.status === 'onboarding') {
+        log().info('routing: onboarding', { workspaceId: workspace.id })
+        await this.handleOnboarding(ev, workspace, channel)
+        return
+      }
+
+      // Normal message → runBetsy
+      log().info('routing: runBetsy', { workspaceId: workspace.id })
+      const response = await this.deps.runBetsyFn({
+        workspaceId: workspace.id,
+        userMessage: ev.text,
+        channel: ev.channel,
+        deps: this.deps.runBetsyDeps,
+      })
+      log().info('runBetsy returned', {
+        workspaceId: workspace.id,
+        textLen: response.text?.length ?? 0,
+        hasAudio: Boolean(response.audio),
+        toolCalls: Array.isArray(response.toolCalls) ? response.toolCalls.length : 0,
+      })
+
+      await channel.sendMessage({
+        chatId: ev.chatId,
+        text: response.text,
+        audio: response.audio && {
+          base64: response.audio.base64,
+          mimeType: response.audio.mimeType,
+        },
+      })
+      log().info('inbound: response sent', { workspaceId: workspace.id })
+    } catch (err) {
+      log().error('inbound failed', {
+        channel: ev.channel,
+        userId: String(ev.userId),
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      })
+      // Best-effort user notification
+      try {
+        const ch = this.deps.channels[ev.channel]
+        if (ch) {
+          await ch.sendMessage({
+            chatId: ev.chatId,
+            text: 'Ой, у меня сейчас сбой. Я уже разбираюсь, попробуй ещё раз через минуту 💙',
+          })
+        }
+      } catch (notifyErr) {
+        log().error('inbound: failed to notify user about error', {
+          error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr),
+        })
+      }
+    }
   }
 
   private async handleOnboarding(
