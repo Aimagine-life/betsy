@@ -3,6 +3,7 @@ import type { MemoryTool } from '../agents/tools/memory-tools.js'
 import type { SkillStep, WorkspaceSkill, SkillRunResult } from './types.js'
 import { renderTemplate, renderValue } from './template.js'
 import { safeEvalBool } from './safe-eval.js'
+import { withSpan } from '../observability/tracing.js'
 
 export interface SkillLLM {
   /** Short single-turn prompt → text. */
@@ -132,6 +133,17 @@ async function runStep(step: SkillStep, state: RunState): Promise<void> {
 }
 
 export async function executeSkill(
+  skill: WorkspaceSkill,
+  ctx: ExecuteSkillContext,
+): Promise<SkillRunResult> {
+  return withSpan(
+    `betsy.skill.${skill.name}`,
+    () => executeSkillImpl(skill, ctx),
+    { name: skill.name, stepCount: skill.steps.length },
+  )
+}
+
+async function executeSkillImpl(
   skill: WorkspaceSkill,
   ctx: ExecuteSkillContext,
 ): Promise<SkillRunResult> {
