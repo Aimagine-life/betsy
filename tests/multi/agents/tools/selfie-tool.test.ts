@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createSelfieTool } from '../../../../src/multi/agents/tools/selfie-tool.js'
+import { drainPendingMedia, clearPendingMedia } from '../../../../src/multi/agents/pending-media.js'
 
 function mockDeps() {
   const personaRepo = {
@@ -25,7 +26,8 @@ function mockDeps() {
 }
 
 describe('createSelfieTool', () => {
-  it('generates selfie and returns presigned URL', async () => {
+  it('generates selfie and queues binary in pending-media', async () => {
+    clearPendingMedia('ws1')
     const deps = mockDeps()
     const tool = createSelfieTool({
       personaRepo: deps.personaRepo as any,
@@ -36,10 +38,14 @@ describe('createSelfieTool', () => {
     })
     const result = await tool.execute({ scene: 'в кафе', aspect: '3:4' })
     expect((result as any).success).toBe(true)
-    expect((result as any).image_url).toBe('https://signed/url')
+    expect((result as any).scene).toBe('в кафе')
     expect(deps.s3.download).toHaveBeenCalledTimes(3)
     expect(deps.generateSelfieFn).toHaveBeenCalled()
-    expect(deps.s3.upload).toHaveBeenCalled()
+    const pending = drainPendingMedia('ws1')
+    expect(pending).toHaveLength(1)
+    expect(pending[0].kind).toBe('photo')
+    expect(pending[0].mimeType).toBe('image/png')
+    expect(pending[0].buffer.toString()).toBe('fake-png')
   })
 
   it('returns error when persona has no reference images', async () => {
