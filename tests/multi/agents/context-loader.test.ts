@@ -9,6 +9,8 @@ describe('loadAgentContext', () => {
         { id: '2', kind: 'fact', content: 'Работает в Wildbots' },
         { id: '3', kind: 'preference', content: 'Любит котов' },
       ]),
+      listByKind: vi.fn().mockResolvedValue([]),
+      searchByEmbedding: vi.fn().mockResolvedValue([]),
     }
     const convRepo = {
       recent: vi.fn().mockResolvedValue([
@@ -31,7 +33,11 @@ describe('loadAgentContext', () => {
   })
 
   it('returns empty arrays when nothing stored', async () => {
-    const factsRepo = { list: vi.fn().mockResolvedValue([]) }
+    const factsRepo = {
+      list: vi.fn().mockResolvedValue([]),
+      listByKind: vi.fn().mockResolvedValue([]),
+      searchByEmbedding: vi.fn().mockResolvedValue([]),
+    }
     const convRepo = { recent: vi.fn().mockResolvedValue([]) }
     const out = await loadAgentContext({
       factsRepo: factsRepo as any,
