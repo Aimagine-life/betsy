@@ -11,6 +11,7 @@ import type { GoogleGenAI } from '@google/genai'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 import type { MemoryTool } from './tools/memory-tools.js'
 import { log } from '../observability/logger.js'
+import { withSpan } from '../observability/tracing.js'
 
 /**
  * Retry a Gemini API call on 429 RESOURCE_EXHAUSTED with exponential backoff.
@@ -91,6 +92,26 @@ export async function runWithGeminiTools(
   userMessage: string,
   history: Array<{ role: 'user' | 'assistant' | 'tool'; content: string }> = [],
 ): Promise<GeminiRunResult> {
+  return withSpan(
+    'betsy.gemini.run',
+    () => runWithGeminiToolsImpl(gemini, agent, userMessage, history),
+    {
+      model:
+        typeof (agent as any)?.model === 'string'
+          ? (agent as any).model
+          : (agent as any)?.model?.model ?? (agent as any)?.model?.name ?? 'unknown',
+      toolCount: ((agent as any)?.tools ?? []).length,
+      historyLen: history.length,
+    },
+  )
+}
+
+async function runWithGeminiToolsImpl(
+  gemini: GoogleGenAI,
+  agent: any,
+  userMessage: string,
+  history: Array<{ role: 'user' | 'assistant' | 'tool'; content: string }> = [],
+): Promise<GeminiRunResult> {
   const instruction: string = (agent as any).instruction ?? ''
   const rawModel = (agent as any).model
   const modelName =
@@ -164,7 +185,11 @@ export async function runWithGeminiTools(
       }
       try {
         log().info('tool: executing', { name: fc.name, args: fc.args })
-        const result = await tool.execute(fc.args ?? {})
+        const result = await withSpan(
+          `betsy.tool.${fc.name}`,
+          () => tool.execute(fc.args ?? {}),
+          { name: fc.name, argsBytes: safeArgsBytes(fc.args) },
+        )
         log().info('tool: ok', { name: fc.name, result })
         toolCalls.push({ name: fc.name, args: fc.args, result })
         responseParts.push({
@@ -186,6 +211,14 @@ export async function runWithGeminiTools(
   }
 
   return { text: finalText, toolCalls, tokensUsed: totalTokens }
+}
+
+function safeArgsBytes(args: unknown): number {
+  try {
+    return JSON.stringify(args ?? {}).length
+  } catch {
+    return 0
+  }
 }
 
 export interface StreamingRunResult {
@@ -218,6 +251,27 @@ export interface RunStreamOptions {
 }
 
 export async function runWithGeminiToolsStream(
+  gemini: GoogleGenAI,
+  agent: any,
+  userMessage: string,
+  history: ConversationTurn[] = [],
+  options: RunStreamOptions = {},
+): Promise<StreamingRunResult> {
+  return withSpan(
+    'betsy.gemini.runStream',
+    () => runWithGeminiToolsStreamImpl(gemini, agent, userMessage, history, options),
+    {
+      model:
+        typeof (agent as any)?.model === 'string'
+          ? (agent as any).model
+          : (agent as any)?.model?.model ?? (agent as any)?.model?.name ?? 'unknown',
+      toolCount: ((agent as any)?.tools ?? []).length,
+      historyLen: history.length,
+    },
+  )
+}
+
+async function runWithGeminiToolsStreamImpl(
   gemini: GoogleGenAI,
   agent: any,
   userMessage: string,
@@ -382,7 +436,11 @@ export async function runWithGeminiToolsStream(
           }
           try {
             log().info('tool: executing', { name: fc.name, args: fc.args })
-            const result = await tool.execute(fc.args ?? {})
+            const result = await withSpan(
+              `betsy.tool.${fc.name}`,
+              () => tool.execute(fc.args ?? {}),
+              { name: fc.name, argsBytes: safeArgsBytes(fc.args) },
+            )
             log().info('tool: ok', { name: fc.name, result })
             collectedToolCalls.push({ name: fc.name, args: fc.args, result })
             responseParts.push({
