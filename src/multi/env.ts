@@ -6,8 +6,12 @@ const envSchema = z.object({
   BC_DATABASE_URL: z.string().min(1, 'BC_DATABASE_URL is required'),
   BC_ENCRYPTION_KEY: z.string().optional(),
 
-  // Google
-  GEMINI_API_KEY: z.string().min(1, 'GEMINI_API_KEY is required'),
+  // Google — either AI Studio (GEMINI_API_KEY) or Vertex AI (BC_GEMINI_VERTEX=1 + BC_GCP_PROJECT)
+  GEMINI_API_KEY: z.string().optional(),
+  BC_GEMINI_VERTEX: z.enum(['0', '1']).default('0'),
+  BC_GCP_PROJECT: z.string().optional(),
+  BC_GCP_LOCATION: z.string().default('us-central1'),
+  GOOGLE_APPLICATION_CREDENTIALS: z.string().optional(),
 
   // Channels (at least one required, enforced below)
   BC_TELEGRAM_BOT_TOKEN: z.string().optional(),
@@ -47,6 +51,19 @@ export function parseEnv(raw: NodeJS.ProcessEnv): Env {
   const parsed = envSchema.parse(raw)
   if (!parsed.BC_TELEGRAM_BOT_TOKEN && !parsed.BC_MAX_BOT_TOKEN) {
     throw new Error('At least one of BC_TELEGRAM_BOT_TOKEN or BC_MAX_BOT_TOKEN must be set')
+  }
+  // Either Vertex AI (with project + creds) or AI Studio (with API key) must be configured
+  if (parsed.BC_GEMINI_VERTEX === '1') {
+    if (!parsed.BC_GCP_PROJECT) {
+      throw new Error('BC_GEMINI_VERTEX=1 requires BC_GCP_PROJECT')
+    }
+    if (!parsed.GOOGLE_APPLICATION_CREDENTIALS) {
+      throw new Error('BC_GEMINI_VERTEX=1 requires GOOGLE_APPLICATION_CREDENTIALS pointing to a service account JSON file')
+    }
+  } else {
+    if (!parsed.GEMINI_API_KEY) {
+      throw new Error('GEMINI_API_KEY is required when not in Vertex AI mode (BC_GEMINI_VERTEX=0)')
+    }
   }
   return parsed
 }

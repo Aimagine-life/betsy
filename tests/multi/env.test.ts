@@ -6,16 +6,46 @@ describe('parseEnv', () => {
     expect(() => parseEnv({})).toThrow(/BC_DATABASE_URL/)
   })
 
-  it('throws when GEMINI_API_KEY missing', () => {
+  it('throws when GEMINI_API_KEY missing in AI Studio mode', () => {
     expect(() => parseEnv({
       BC_DATABASE_URL: 'postgres://x',
+      BC_TELEGRAM_BOT_TOKEN: 't',
     })).toThrow(/GEMINI_API_KEY/)
+  })
+
+  it('accepts Vertex AI mode without GEMINI_API_KEY', () => {
+    const env = parseEnv({
+      BC_DATABASE_URL: 'postgres://x',
+      BC_TELEGRAM_BOT_TOKEN: 't',
+      BC_GEMINI_VERTEX: '1',
+      BC_GCP_PROJECT: 'my-project',
+      GOOGLE_APPLICATION_CREDENTIALS: '/path/to/sa.json',
+    })
+    expect(env.BC_GEMINI_VERTEX).toBe('1')
+    expect(env.BC_GCP_PROJECT).toBe('my-project')
+  })
+
+  it('throws when Vertex mode missing project', () => {
+    expect(() => parseEnv({
+      BC_DATABASE_URL: 'postgres://x',
+      BC_TELEGRAM_BOT_TOKEN: 't',
+      BC_GEMINI_VERTEX: '1',
+      GOOGLE_APPLICATION_CREDENTIALS: '/x',
+    })).toThrow(/BC_GCP_PROJECT/)
+  })
+
+  it('throws when Vertex mode missing credentials', () => {
+    expect(() => parseEnv({
+      BC_DATABASE_URL: 'postgres://x',
+      BC_TELEGRAM_BOT_TOKEN: 't',
+      BC_GEMINI_VERTEX: '1',
+      BC_GCP_PROJECT: 'p',
+    })).toThrow(/GOOGLE_APPLICATION_CREDENTIALS/)
   })
 
   it('throws when at least one bot token missing', () => {
     expect(() => parseEnv({
       BC_DATABASE_URL: 'postgres://x',
-      GEMINI_API_KEY: 'k',
     })).toThrow(/BC_TELEGRAM_BOT_TOKEN/)
   })
 

@@ -8,3 +8,8 @@ data/
 *.log
 .DS_Store
 .claude/
+
+# GCP service account keys — NEVER commit
+betsy-*.json
+gcp-sa*.json
+*service-account*.json

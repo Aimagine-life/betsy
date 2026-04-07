@@ -55,16 +55,34 @@ export async function startMultiServer(): Promise<void> {
     logger.warn('s3 credentials missing, storage disabled')
   }
 
-  // Gemini client
-  buildGemini(env.GEMINI_API_KEY)
-  logger.info('gemini client initialized', {
-    models: [
-      'gemini-flash-latest',
-      'gemini-pro-latest',
-      'gemini-3.1-flash-image-preview',
-      'gemini-2.5-flash-preview-tts',
-    ],
-  })
+  // Gemini client — Vertex AI mode (no regional restrictions) or AI Studio (legacy)
+  if (env.BC_GEMINI_VERTEX === '1') {
+    buildGemini({
+      vertexai: true,
+      project: env.BC_GCP_PROJECT,
+      location: env.BC_GCP_LOCATION,
+    })
+    logger.info('gemini client initialized (vertex)', {
+      project: env.BC_GCP_PROJECT,
+      location: env.BC_GCP_LOCATION,
+      models: [
+        'gemini-flash-latest',
+        'gemini-pro-latest',
+        'gemini-3.1-flash-image-preview',
+        'gemini-2.5-flash-preview-tts',
+      ],
+    })
+  } else {
+    buildGemini({ apiKey: env.GEMINI_API_KEY! })
+    logger.info('gemini client initialized (ai studio)', {
+      models: [
+        'gemini-flash-latest',
+        'gemini-pro-latest',
+        'gemini-3.1-flash-image-preview',
+        'gemini-2.5-flash-preview-tts',
+      ],
+    })
+  }
 
   // Repos
   const wsRepo = new WorkspaceRepo(pool)
