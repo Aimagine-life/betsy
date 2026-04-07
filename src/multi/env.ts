@@ -38,6 +38,7 @@ const envSchema = z.object({
 
   // Ops
   BC_LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  BC_REMINDERS_POLL_INTERVAL_MS: z.coerce.number().int().default(30_000),
 })
 
 export type Env = z.infer<typeof envSchema>

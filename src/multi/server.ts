@@ -2,9 +2,22 @@ import { loadEnv } from './env.js'
 import { log } from './observability/logger.js'
 import { buildPool, closePool } from './db/pool.js'
 import { runMigrations } from './db/migrate.js'
-import { buildS3Storage } from './storage/s3.js'
-import { buildGemini } from './gemini/client.js'
+import { buildS3Storage, getS3Storage } from './storage/s3.js'
+import { buildGemini, getGemini } from './gemini/client.js'
 import { startHealthzServer } from './http/healthz.js'
+import { TelegramAdapter } from './channels/telegram.js'
+import { MaxAdapter } from './channels/max.js'
+import type { ChannelAdapter, ChannelName } from './channels/base.js'
+import { BotRouter } from './bot-router/router.js'
+import { WorkspaceRepo } from './workspaces/repo.js'
+import { PersonaRepo } from './personas/repo.js'
+import { FactsRepo } from './memory/facts-repo.js'
+import { ConversationRepo } from './memory/conversation-repo.js'
+import { RemindersRepo } from './reminders/repo.js'
+import { LinkCodesRepo } from './linking/repo.js'
+import { LinkingService } from './linking/service.js'
+import { runBetsy } from './agents/runner.js'
+import { startRemindersWorker } from './jobs/reminders-worker.js'
 
 export async function startMultiServer(): Promise<void> {
   let env
@@ -52,6 +65,106 @@ export async function startMultiServer(): Promise<void> {
     ],
   })
 
+  // Repos
+  const wsRepo = new WorkspaceRepo(pool)
+  const personaRepo = new PersonaRepo(pool)
+  const factsRepo = new FactsRepo(pool)
+  const convRepo = new ConversationRepo(pool)
+  const remindersRepo = new RemindersRepo(pool)
+  const linkCodesRepo = new LinkCodesRepo(pool)
+  const linkingSvc = new LinkingService(linkCodesRepo, {
+    findById: async (id: string) => {
+      const w = await wsRepo.findById(id)
+      return w ? { id: w.id, ownerTgId: w.ownerTgId, ownerMaxId: w.ownerMaxId } : null
+    },
+    updateOwnerTg: (id: string, tgId: number) => wsRepo.updateOwnerTg(id, tgId),
+    updateOwnerMax: (id: string, maxId: number) => wsRepo.updateOwnerMax(id, maxId),
+  })
+
+  // Channels
+  const channels: Partial<Record<ChannelName, ChannelAdapter>> = {}
+  if (env.BC_TELEGRAM_BOT_TOKEN) {
+    channels.telegram = new TelegramAdapter(env.BC_TELEGRAM_BOT_TOKEN)
+    logger.info('telegram adapter configured')
+  }
+  if (env.BC_MAX_BOT_TOKEN) {
+    channels.max = new MaxAdapter(env.BC_MAX_BOT_TOKEN)
+    logger.info('max adapter configured')
+  }
+
+  // Bot router with runBetsy agent runner
+  const runBetsyDeps = {
+    wsRepo,
+    personaRepo,
+    factsRepo,
+    convRepo,
+    remindersRepo,
+    s3: env.BC_S3_ACCESS_KEY ? getS3Storage() : ({} as any),
+    gemini: getGemini(),
+    agentRunner: async (agent: any, userMessage: string) => {
+      const gemini = getGemini()
+      const instruction = (agent as any).instruction ?? ''
+      const rawModel = (agent as any).model
+      const modelName =
+        typeof rawModel === 'string'
+          ? rawModel
+          : rawModel?.model ?? rawModel?.name ?? rawModel?.modelName ?? 'gemini-flash-latest'
+      const gResp = await gemini.models.generateContent({
+        model: modelName,
+        contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+        config: { systemInstruction: instruction } as any,
+      })
+      const text =
+        (gResp as any).text ??
+        (gResp as any).candidates?.[0]?.content?.parts?.[0]?.text ??
+        ''
+      const usage = (gResp as any).usageMetadata ?? {}
+      return {
+        text,
+        toolCalls: [],
+        tokensUsed: (usage.totalTokenCount as number) ?? 0,
+      }
+    },
+  }
+
+  const router = new BotRouter({
+    wsRepo,
+    personaRepo,
+    factsRepo,
+    linkingSvc,
+    channels,
+    runBetsyFn: runBetsy,
+    runBetsyDeps,
+  })
+  router.attach()
+
+  for (const adapter of Object.values(channels)) {
+    if (adapter) await adapter.start()
+  }
+  logger.info('channel adapters started', {
+    channels: Object.keys(channels),
+  })
+
+  // Reminders worker
+  const remindersWorker = startRemindersWorker(
+    {
+      wsRepo,
+      remindersRepo,
+      channels,
+      resolveOwnerChatId: (w, ch) =>
+        ch === 'telegram'
+          ? (w.ownerTgId ? String(w.ownerTgId) : null)
+          : w.ownerMaxId
+            ? String(w.ownerMaxId)
+            : null,
+    },
+    env.BC_REMINDERS_POLL_INTERVAL_MS,
+  )
+  remindersWorker.start()
+  logger.info('reminders worker started', {
+    intervalMs: env.BC_REMINDERS_POLL_INTERVAL_MS,
+  })
+
   // Healthz
   const healthzServer = startHealthzServer(env.BC_HEALTHZ_PORT, pool)
   logger.info('healthz server listening', { port: env.BC_HEALTHZ_PORT })
@@ -66,6 +179,10 @@ export async function startMultiServer(): Promise<void> {
     hardTimeout.unref()
 
     try {
+      await remindersWorker.stop()
+      for (const adapter of Object.values(channels)) {
+        if (adapter) await adapter.stop()
+      }
       await new Promise<void>((resolve) => healthzServer.close(() => resolve()))
       await closePool()
       logger.info('shutdown complete')
