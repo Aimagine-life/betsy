@@ -88,7 +88,7 @@ export async function startMultiServer(): Promise<void> {
   const wsRepo = new WorkspaceRepo(pool)
   const personaRepo = new PersonaRepo(pool)
   const factsRepo = new FactsRepo(pool, getGemini())
-  const convRepo = new ConversationRepo(pool)
+  const convRepo = new ConversationRepo(pool, getGemini())
   const remindersRepo = new RemindersRepo(pool)
   const linkCodesRepo = new LinkCodesRepo(pool)
   const linkingSvc = new LinkingService(linkCodesRepo, {
