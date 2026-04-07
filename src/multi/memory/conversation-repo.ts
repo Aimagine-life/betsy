@@ -1,6 +1,8 @@
 import type { Pool } from 'pg'
+import type { GoogleGenAI } from '@google/genai'
 import { withWorkspace } from '../db/rls.js'
 import type { Conversation } from './types.js'
+import { embedText, toPgVector } from './embeddings.js'
 import { log } from '../observability/logger.js'
 
 function rowToConversation(r: any): Conversation {
@@ -13,6 +15,11 @@ function rowToConversation(r: any): Conversation {
     toolCalls: r.tool_calls,
     tokensUsed: r.tokens_used,
     meta: r.meta ?? {},
+    chatId: r.chat_id ?? null,
+    externalMessageId:
+      r.external_message_id === null || r.external_message_id === undefined
+        ? null
+        : Number(r.external_message_id),
     createdAt: r.created_at,
   }
 }
@@ -24,10 +31,21 @@ export interface AppendInput {
   toolCalls?: unknown
   tokensUsed?: number
   meta?: Record<string, unknown>
+  /** Native column — platform chat id (Telegram chat.id stringified). */
+  chatId?: string | null
+  /** Native column — platform message id (Telegram message_id as bigint). */
+  externalMessageId?: number | null
 }
 
+/** Minimum content length for embedding. Avoids indexing "ok"/"да"/emoji-only replies. */
+const MIN_EMBED_LEN = 10
+
 export class ConversationRepo {
-  constructor(private pool: Pool) {}
+  constructor(
+    private pool: Pool,
+    /** Optional — when provided, `append` inline-computes embeddings. */
+    private gemini?: GoogleGenAI,
+  ) {}
 
   async append(workspaceId: string, input: AppendInput): Promise<Conversation> {
     log().info('convRepo.append: start', {
@@ -35,13 +53,15 @@ export class ConversationRepo {
       role: input.role,
       channel: input.channel,
       contentLen: input.content?.length ?? 0,
+      hasChatId: input.chatId != null,
+      hasExternalMessageId: input.externalMessageId != null,
     })
     try {
       const result = await withWorkspace(this.pool, workspaceId, async (client) => {
         const { rows } = await client.query(
           `insert into bc_conversation
-            (workspace_id, channel, role, content, tool_calls, tokens_used, meta)
-           values ($1, $2, $3, $4, $5, $6, $7)
+            (workspace_id, channel, role, content, tool_calls, tokens_used, meta, chat_id, external_message_id)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
            returning *`,
           [
             workspaceId,
@@ -51,11 +71,30 @@ export class ConversationRepo {
             input.toolCalls ? JSON.stringify(input.toolCalls) : null,
             input.tokensUsed ?? 0,
             JSON.stringify(input.meta ?? {}),
+            input.chatId ?? null,
+            input.externalMessageId ?? null,
           ],
         )
         return rowToConversation(rows[0])
       })
       log().info('convRepo.append: ok', { workspaceId, id: result.id, role: input.role })
+
+      // Inline embedding (best-effort). Runs AFTER the insert succeeds so the
+      // message is always persisted. Failure → log + leave embedding NULL.
+      if (
+        this.gemini &&
+        (input.role === 'user' || input.role === 'assistant') &&
+        input.content.length >= MIN_EMBED_LEN
+      ) {
+        this.embedAndStore(workspaceId, result.id, input.content).catch((e) =>
+          log().warn('convRepo.append: inline embedding failed (will backfill)', {
+            workspaceId,
+            id: result.id,
+            error: e instanceof Error ? e.message : String(e),
+          }),
+        )
+      }
+
       return result
     } catch (e) {
       log().error('convRepo.append: failed', {
@@ -65,6 +104,13 @@ export class ConversationRepo {
       })
       throw e
     }
+  }
+
+  /** Internal: embed content and write it to the row. Non-fatal on failure. */
+  private async embedAndStore(workspaceId: string, id: string, content: string): Promise<void> {
+    if (!this.gemini) return
+    const vec = await embedText(this.gemini, content)
+    await this.setEmbedding(workspaceId, id, vec)
   }
 
   async recent(workspaceId: string, limit: number): Promise<Conversation[]> {
@@ -183,6 +229,29 @@ export class ConversationRepo {
     return withWorkspace(this.pool, workspaceId, async (client) => {
       const result = await client.query(`delete from bc_conversation`)
       return result.rowCount ?? 0
+    })
+  }
+
+  async setExternalMessageId(
+    workspaceId: string,
+    id: string,
+    externalMessageId: number,
+  ): Promise<void> {
+    await withWorkspace(this.pool, workspaceId, async (client) => {
+      await client.query(
+        `update bc_conversation set external_message_id = $1 where id = $2`,
+        [externalMessageId, id],
+      )
+    })
+  }
+
+  async setEmbedding(workspaceId: string, id: string, vec: number[]): Promise<void> {
+    const pgVec = toPgVector(vec)
+    await withWorkspace(this.pool, workspaceId, async (client) => {
+      await client.query(
+        `update bc_conversation set embedding = $1::vector where id = $2`,
+        [pgVec, id],
+      )
     })
   }
 }

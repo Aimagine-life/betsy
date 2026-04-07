@@ -16,8 +16,10 @@ export interface Conversation {
   channel: 'telegram' | 'max' | 'cabinet'
   role: 'user' | 'assistant' | 'tool'
   content: string
-  toolCalls: unknown | null
+  toolCalls: unknown
   tokensUsed: number
   meta: Record<string, unknown>
+  chatId: string | null
+  externalMessageId: number | null
   createdAt: Date
 }

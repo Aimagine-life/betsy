@@ -76,4 +76,42 @@ d('ConversationRepo', () => {
     const msgs = await repo.recent(workspaceId, 1)
     expect(msgs[0].tokensUsed).toBe(150)
   })
+
+  it('append persists chat_id and external_message_id when provided', async () => {
+    const msg = await repo.append(workspaceId, {
+      channel: 'telegram',
+      role: 'user',
+      content: 'Привет',
+      chatId: '123456',
+      externalMessageId: 789,
+    })
+    expect(msg.chatId).toBe('123456')
+    expect(msg.externalMessageId).toBe(789)
+
+    const recent = await repo.recent(workspaceId, 1)
+    expect(recent[0].chatId).toBe('123456')
+    expect(recent[0].externalMessageId).toBe(789)
+  })
+
+  it('append allows chat_id and external_message_id to be omitted (legacy callers)', async () => {
+    const msg = await repo.append(workspaceId, {
+      channel: 'telegram',
+      role: 'assistant',
+      content: 'Ответ',
+    })
+    expect(msg.chatId).toBeNull()
+    expect(msg.externalMessageId).toBeNull()
+  })
+
+  it('setExternalMessageId updates the row', async () => {
+    const msg = await repo.append(workspaceId, {
+      channel: 'telegram',
+      role: 'assistant',
+      content: 'ok',
+      chatId: '1',
+    })
+    await repo.setExternalMessageId(workspaceId, msg.id, 555)
+    const recent = await repo.recent(workspaceId, 1)
+    expect(recent[0].externalMessageId).toBe(555)
+  })
 })
