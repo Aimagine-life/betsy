@@ -487,13 +487,15 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
         chatId: input.currentChatId,
       })
       assistantRowId = row.id
+      resolveRowId(assistantRowId)
     } catch (e) {
+      resolveRowId(undefined)
       log().error('runBetsyStream: append assistant failed', {
         workspaceId,
         error: e instanceof Error ? e.message : String(e),
       })
+      throw e
     }
-    resolveRowId(assistantRowId)
 
     fireAndForgetSummarize(deps, workspaceId)
     fireAndForgetExtract(deps, workspaceId, userMessage, result.text)
