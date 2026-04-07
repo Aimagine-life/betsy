@@ -128,6 +128,39 @@ export class ConversationRepo {
   }
 
   /**
+   * Delete the messages with the given UUIDs.
+   * Returns the number actually deleted.
+   */
+  async deleteByIds(workspaceId: string, ids: string[]): Promise<number> {
+    if (ids.length === 0) return 0
+    return withWorkspace(this.pool, workspaceId, async (client) => {
+      const result = await client.query(
+        `delete from bc_conversation where id = any($1::uuid[])`,
+        [ids],
+      )
+      return result.rowCount ?? 0
+    })
+  }
+
+  /**
+   * Delete all messages whose content matches ANY of the given ILIKE patterns.
+   * Returns the number actually deleted. Case-insensitive substring match.
+   */
+  async deleteMatching(workspaceId: string, patterns: string[]): Promise<number> {
+    if (patterns.length === 0) return 0
+    return withWorkspace(this.pool, workspaceId, async (client) => {
+      // Build an OR of ILIKE clauses
+      const clauses = patterns.map((_, i) => `content ilike $${i + 1}`).join(' or ')
+      const args = patterns.map((p) => `%${p}%`)
+      const result = await client.query(
+        `delete from bc_conversation where ${clauses}`,
+        args,
+      )
+      return result.rowCount ?? 0
+    })
+  }
+
+  /**
    * Delete the N most recent messages (regardless of role).
    * Returns the number actually deleted.
    */

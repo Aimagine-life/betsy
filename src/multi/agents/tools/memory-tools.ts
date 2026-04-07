@@ -56,6 +56,59 @@ UPDATED SUMMARY:`
   }
 }
 
+/**
+ * Ask Gemini Flash to semantically pick which items from a list are related
+ * to a topic. Returns indexes (0-based) of the items to delete.
+ *
+ * One LLM call regardless of list size — no per-item overhead.
+ */
+async function pickRelatedItems(
+  gemini: GoogleGenAI,
+  topic: string,
+  items: string[],
+): Promise<Set<number>> {
+  if (items.length === 0) return new Set()
+
+  // Truncate each item so the prompt stays manageable; semantic match still works
+  const truncated = items.map((s, i) => `${i}: ${(s ?? '').slice(0, 300)}`)
+
+  const prompt = `Below is a list of memory items. The user wants to forget everything related to a TOPIC. Decide which items are RELATED to this topic (in any meaningful way: directly mentions it, refers to it by codename, talks about events around it, etc.). Return ONLY a JSON array of the integer indexes that should be deleted. No commentary.
+
+If nothing matches, return [].
+
+TOPIC: "${topic}"
+
+ITEMS:
+${truncated.join('\n')}
+
+INDEXES TO DELETE (JSON array):`
+
+  try {
+    const resp: any = await gemini.models.generateContent({
+      model: SUMMARY_EDITOR_MODEL,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    })
+    const text =
+      (resp as any).text ??
+      (resp as any).candidates?.[0]?.content?.parts?.[0]?.text ??
+      ''
+    const match = String(text).match(/\[[^\]]*\]/s)
+    if (!match) return new Set()
+    const arr = JSON.parse(match[0])
+    if (!Array.isArray(arr)) return new Set()
+    return new Set(
+      arr
+        .map((x) => Number(x))
+        .filter((n) => Number.isInteger(n) && n >= 0 && n < items.length),
+    )
+  } catch (e) {
+    log().error('forget_fact: semantic picker failed', {
+      error: e instanceof Error ? e.message : String(e),
+    })
+    return new Set()
+  }
+}
+
 export function createMemoryTools(deps: MemoryToolsDeps): MemoryTool[] {
   const { factsRepo, convRepo, gemini, workspaceId } = deps
 
@@ -103,38 +156,48 @@ export function createMemoryTools(deps: MemoryToolsDeps): MemoryTool[] {
   const forgetOne: MemoryTool = {
     name: 'forget_fact',
     description:
-      'Забыть тему из памяти. Удаляет atomic facts с этим словом И ПОПРАВЛЯЕТ долгосрочное саммари — Gemini Flash перепишет его, убрав упоминания темы. Используй когда юзер просит забыть что-то конкретное: "забудь про печь", "забудь моего бывшего", "удали про работу". Если ничего не найдено — честно скажи юзеру.',
+      'Забыть тему из памяти ПОЛНОСТЬЮ — семантически, не по совпадению слов. Делает три вещи через Gemini: (1) находит и удаляет связанные atomic facts, (2) ПЕРЕПИСЫВАЕТ долгосрочное саммари без упоминаний темы, (3) находит и удаляет связанные сообщения из истории чата. Понимает синонимы, кодовые имена, контекст. Используй когда юзер просит забыть что-то конкретное: "забудь про печь", "забудь моего бывшего", "удали про работу".',
     parameters: forgetOneParams,
     async execute(params) {
       const parsed = forgetOneParams.parse(params)
-      const matches = await factsRepo.searchByContent(workspaceId, parsed.query, 20)
 
-      // Split into atomic facts (delete outright) and summary fact (edit through Gemini)
-      const atomicMatches = matches.filter((f) => (f.kind as string) !== 'summary')
-      const summaryMatches = matches.filter((f) => (f.kind as string) === 'summary')
+      if (!gemini) {
+        return {
+          success: false,
+          message: 'gemini client not available — semantic forget cannot run',
+        }
+      }
 
-      // 1) Delete atomic facts directly
+      // 1) Semantic deletion of atomic facts
+      const allFacts = await factsRepo.list(workspaceId, 200)
+      const atomicFacts = allFacts.filter((f) => (f.kind as string) !== 'summary')
+      const summaryFacts = allFacts.filter((f) => (f.kind as string) === 'summary')
+
+      const factIndexesToDelete = await pickRelatedItems(
+        gemini,
+        parsed.query,
+        atomicFacts.map((f) => f.content),
+      )
       const deletedContents: string[] = []
-      for (const f of atomicMatches) {
+      for (const idx of factIndexesToDelete) {
+        const f = atomicFacts[idx]
         await factsRepo.forget(workspaceId, f.id)
         deletedContents.push(f.content)
       }
+      log().info('forget_fact: atomic facts deleted', {
+        topic: parsed.query,
+        count: deletedContents.length,
+      })
 
-      // 2) For each summary match, ask Gemini to rewrite it without the topic
+      // 2) Edit the rolling summary
       let summaryEdited = false
-      let editError: string | null = null
-      for (const summaryFact of summaryMatches) {
-        if (!gemini) {
-          editError = 'gemini client not available — summary cannot be edited'
-          break
-        }
+      for (const summaryFact of summaryFacts) {
         const newSummary = await editSummaryRemovingTopic(
           gemini,
           summaryFact.content,
           parsed.query,
         )
         if (newSummary && newSummary !== summaryFact.content) {
-          // Replace by deleting old + inserting new (factsRepo lacks an update method)
           await factsRepo.forget(workspaceId, summaryFact.id)
           await factsRepo.remember(workspaceId, {
             kind: 'summary' as FactKind,
@@ -149,43 +212,38 @@ export function createMemoryTools(deps: MemoryToolsDeps): MemoryTool[] {
         }
       }
 
-      // 3) If we found NO match in atomic facts AND NO match in summary,
-      //    do one more pass: maybe the topic is in summary but searchByContent
-      //    used a too-narrow LIKE. Try editing whatever current summary exists.
-      if (!summaryEdited && atomicMatches.length === 0 && gemini) {
-        const allSummaries = await factsRepo.listByKind(
-          workspaceId,
-          'summary' as FactKind,
-          5,
+      // 3) Semantic deletion of conversation messages
+      let conversationDeleted = 0
+      if (convRepo) {
+        const recent = await convRepo.recent(workspaceId, 300)
+        // recent is newest-first; we want to give Gemini them in chronological order
+        const ordered = [...recent].reverse()
+        const items = ordered.map(
+          (m) => `[${m.role}] ${m.content}`,
         )
-        for (const summaryFact of allSummaries) {
-          const newSummary = await editSummaryRemovingTopic(
-            gemini,
-            summaryFact.content,
-            parsed.query,
-          )
-          if (newSummary && newSummary !== summaryFact.content) {
-            await factsRepo.forget(workspaceId, summaryFact.id)
-            await factsRepo.remember(workspaceId, {
-              kind: 'summary' as FactKind,
-              content: newSummary,
-              meta: {
-                source: 'forget_fact_edit',
-                removed_topic: parsed.query,
-                edited_at: new Date().toISOString(),
-              } as any,
-            })
-            summaryEdited = true
-          }
+        const indexesToDelete = await pickRelatedItems(gemini, parsed.query, items)
+        const idsToDelete: string[] = []
+        for (const idx of indexesToDelete) {
+          idsToDelete.push(ordered[idx].id)
         }
+        if (idsToDelete.length > 0) {
+          conversationDeleted = await convRepo.deleteByIds(workspaceId, idsToDelete)
+        }
+        log().info('forget_fact: conversation messages deleted', {
+          topic: parsed.query,
+          count: conversationDeleted,
+        })
       }
 
-      if (deletedContents.length === 0 && !summaryEdited) {
+      const anyChange = deletedContents.length > 0 || summaryEdited || conversationDeleted > 0
+
+      if (!anyChange) {
         return {
           success: false,
           deleted: 0,
           summary_edited: false,
-          message: editError ?? 'Не нашла ничего по этой теме',
+          conversation_deleted: 0,
+          message: 'Не нашла ничего связанного с этой темой',
         }
       }
 
@@ -194,6 +252,7 @@ export function createMemoryTools(deps: MemoryToolsDeps): MemoryTool[] {
         deleted: deletedContents.length,
         deletedContents,
         summary_edited: summaryEdited,
+        conversation_deleted: conversationDeleted,
       }
     },
   }
