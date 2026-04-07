@@ -87,10 +87,11 @@ ${genderBlock}
   if (config.owner) {
     const o = config.owner;
     const parts: string[] = [];
+    if (o.name) {
+      parts.push(`Его зовут: ${o.name}`);
+    }
     if (o.addressAs) {
       parts.push(`Обращайся к нему: ${o.addressAs}`);
-    } else if (o.name) {
-      parts.push(`Его зовут: ${o.name}`);
     }
     if (o.facts && o.facts.length > 0) {
       parts.push("Что ты о нём знаешь:");

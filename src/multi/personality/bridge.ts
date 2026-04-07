@@ -34,18 +34,23 @@ export function buildSystemPromptForPersona(input: BuildPromptInput): string {
     personalitySliders,
     owner: {
       name: userDisplayName ?? undefined,
-      addressAs: userDisplayName
-        ? `${userDisplayName}, ${addressForm === 'ty' ? 'на ты' : 'на вы'}`
-        : addressForm === 'ty'
-          ? 'на ты'
-          : 'на вы',
+      addressAs: addressForm === 'ty' ? 'на ты' : 'на вы',
       facts: ownerFacts,
     },
   }
 
   const base = buildSystemPrompt(config)
-  return `${base}\n\n${FORMATTING_INSTRUCTIONS}`
+  return `${base}\n\n${ADDRESS_INSTRUCTIONS}\n\n${FORMATTING_INSTRUCTIONS}`
 }
+
+const ADDRESS_INSTRUCTIONS = `## Как обращаться к собеседнику
+
+НЕ называй его по имени в каждом сообщении — это звучит формально и раздражает. Имя используй только когда это уместно:
+- В первом приветствии после долгой паузы
+- Когда хочешь привлечь внимание к важному
+- В очень эмоциональные моменты («Костя, ну ты что!»)
+
+В обычном диалоге обращайся БЕЗ имени — как к близкому человеку. «Привет!», «Как дела?», «Что делаешь?» — а не «Привет, Константин!», «Как дела, Костя?». Натуральное общение друзей не строится на постоянном повторении имени.`
 
 const FORMATTING_INSTRUCTIONS = `## Форматирование ответов
 
