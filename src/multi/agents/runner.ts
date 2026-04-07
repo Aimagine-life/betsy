@@ -227,7 +227,13 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
     currentChannel: channel,
   })
 
-  log().info('runBetsyStream: start', { workspaceId, channel, userMsgLen: userMessage.length })
+  log().info('runBetsyStream: agent built', {
+    workspaceId,
+    channel,
+    userMsgLen: userMessage.length,
+    ownerFactsCount: context.factContents.length,
+    historyCount: context.history.length,
+  })
 
   try {
     await deps.convRepo.append(workspaceId, {

@@ -80,10 +80,11 @@ describe('TelegramAdapter.streamMessage', () => {
     // accumulating text — last draft call should match last chunk
     expect(calls[calls.length - 1][0].text).toBe('Hi there!')
     expect(calls[calls.length - 1][0].chat_id).toBe(12345)
+    expect(calls[calls.length - 1][0].parse_mode).toBe('HTML')
     expect(typeof calls[0][0].draft_id).toBe('number')
     expect(calls[0][0].draft_id).not.toBe(0)
-    // final sendMessage with full text
-    expect(sendMessage).toHaveBeenCalledWith(12345, 'Hi there!')
+    // final sendMessage with full text + parse_mode
+    expect(sendMessage).toHaveBeenCalledWith(12345, 'Hi there!', { parse_mode: 'HTML' })
   })
 
   it('falls back to sendMessage when sendMessageDraft is unsupported', async () => {
@@ -108,6 +109,6 @@ describe('TelegramAdapter.streamMessage', () => {
     // After first failure, no further draft calls expected
     expect(sendMessageDraft).toHaveBeenCalledTimes(1)
     // Final fallback message goes through
-    expect(sendMessage).toHaveBeenCalledWith(99, 'part1 part2')
+    expect(sendMessage).toHaveBeenCalledWith(99, 'part1 part2', { parse_mode: 'HTML' })
   })
 })

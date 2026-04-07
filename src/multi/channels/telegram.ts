@@ -1,5 +1,28 @@
 import { Bot, type Context, InputFile } from 'grammy'
 import type { InboundEvent, OutboundMessage, ChannelAdapter, StreamableOutbound } from './base.js'
+import { markdownToTelegramHTML } from './markdown-to-html.js'
+
+/** Send text with parse_mode=HTML; on Telegram 400 fall back to plain text. */
+async function sendHtmlOrPlain(
+  bot: Bot,
+  chatId: number,
+  text: string,
+): Promise<void> {
+  const html = markdownToTelegramHTML(text)
+  try {
+    await bot.api.sendMessage(chatId, html, { parse_mode: 'HTML' })
+  } catch (e: any) {
+    if (e?.error_code === 400) {
+      try {
+        await bot.api.sendMessage(chatId, text)
+      } catch {
+        /* best-effort */
+      }
+    } else {
+      throw e
+    }
+  }
+}
 
 export function buildInboundFromTelegramCtx(ctx: Context): InboundEvent {
   const msg = ctx.message!
@@ -56,22 +79,36 @@ export class TelegramAdapter implements ChannelAdapter {
 
     // If image present — send as photo with caption
     if (msg.image) {
-      if ('url' in msg.image) {
-        await this.bot.api.sendPhoto(chatId, msg.image.url, {
-          caption: msg.text,
-        })
-      } else {
-        const buf = Buffer.from(msg.image.base64, 'base64')
-        await this.bot.api.sendPhoto(chatId, new InputFile(buf, 'image.png'), {
-          caption: msg.text,
-        })
+      const captionHtml = msg.text ? markdownToTelegramHTML(msg.text) : undefined
+      const opts = captionHtml ? { caption: captionHtml, parse_mode: 'HTML' as const } : {}
+      try {
+        if ('url' in msg.image) {
+          await this.bot.api.sendPhoto(chatId, msg.image.url, opts)
+        } else {
+          const buf = Buffer.from(msg.image.base64, 'base64')
+          await this.bot.api.sendPhoto(chatId, new InputFile(buf, 'image.png'), opts)
+        }
+      } catch (e: any) {
+        if (e?.error_code === 400 && msg.text) {
+          // Retry without parse_mode
+          if ('url' in msg.image) {
+            await this.bot.api.sendPhoto(chatId, msg.image.url, { caption: msg.text })
+          } else {
+            const buf = Buffer.from(msg.image.base64, 'base64')
+            await this.bot.api.sendPhoto(chatId, new InputFile(buf, 'image.png'), {
+              caption: msg.text,
+            })
+          }
+        } else {
+          throw e
+        }
       }
       return
     }
 
     // Text always
     if (msg.text && msg.text.length > 0) {
-      await this.bot.api.sendMessage(chatId, msg.text)
+      await sendHtmlOrPlain(this.bot, chatId, msg.text)
     }
 
     // Audio as voice message
@@ -125,12 +162,14 @@ export class TelegramAdapter implements ChannelAdapter {
 
         // Telegram limits text to 4096 chars; truncate for streaming preview.
         const chunkText = accumulated.length > 4096 ? accumulated.slice(0, 4096) : accumulated
+        const chunkHtml = markdownToTelegramHTML(chunkText)
 
         try {
           await (this.bot.api.raw as any).sendMessageDraft({
             chat_id: chatIdNum,
             draft_id: draftId,
-            text: chunkText,
+            text: chunkHtml,
+            parse_mode: 'HTML',
           })
         } catch (e: any) {
           const desc: string = e?.description ?? e?.message ?? ''
@@ -152,11 +191,7 @@ export class TelegramAdapter implements ChannelAdapter {
       // the animated draft with this real message.
       if (lastText && lastText.length > 0) {
         const finalText = lastText.length > 4096 ? lastText.slice(0, 4096) : lastText
-        try {
-          await this.bot.api.sendMessage(chatIdNum, finalText)
-        } catch {
-          // best-effort
-        }
+        await sendHtmlOrPlain(this.bot, chatIdNum, finalText)
       }
     }
   }

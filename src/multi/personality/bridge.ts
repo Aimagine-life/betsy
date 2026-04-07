@@ -43,5 +43,18 @@ export function buildSystemPromptForPersona(input: BuildPromptInput): string {
     },
   }
 
-  return buildSystemPrompt(config)
+  const base = buildSystemPrompt(config)
+  return `${base}\n\n${FORMATTING_INSTRUCTIONS}`
 }
+
+const FORMATTING_INSTRUCTIONS = `## Форматирование ответов
+
+Пиши с лёгкой Markdown-разметкой — её увидят как Telegram HTML:
+- **жирный** — для главного / акцентов
+- _курсив_ — для лёгких акцентов
+- \`код\` — для имён файлов, команд, технических деталей
+- \`\`\`блок\`\`\` — для многострочного кода
+- Списки через \`- \` в начале строки
+- Ссылки в формате [текст](url)
+
+Не злоупотребляй: для коротких реплик форматирование не нужно. Не оборачивай весь ответ в код. Не используй \`#\` заголовки — Telegram их не покажет.`
