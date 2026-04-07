@@ -19,6 +19,12 @@ import { LinkingService } from './linking/service.js'
 import { runBetsy, runBetsyStream } from './agents/runner.js'
 import { runWithGeminiTools } from './agents/gemini-runner.js'
 import { startRemindersWorker } from './jobs/reminders-worker.js'
+// WAVE3C-MERGE: oauth relay callback + oauth/mcp repos for integration tools.
+import { OAuthRepo } from './oauth/repo.js'
+import { McpServersRepo } from './agents/mcp/repo.js'
+import { McpRegistry } from './agents/mcp/registry.js'
+import { OAuthResolver } from './agents/mcp/oauth-resolver.js'
+import { createRelayCallbackHandler } from './oauth/relay-callback.js'
 
 export async function startMultiServer(): Promise<void> {
   let env
@@ -111,6 +117,18 @@ export async function startMultiServer(): Promise<void> {
     logger.info('max adapter configured')
   }
 
+  // WAVE3C-MERGE: per-workspace OAuth + MCP plumbing. Both opt-in: if
+  // BC_OAUTH_ENC_KEY is missing OAuthRepo still constructs (lazy crypto), but
+  // the integration tools will surface errors gracefully.
+  const oauthRepo = new OAuthRepo(pool)
+  const mcpServersRepo = new McpServersRepo(pool)
+  const oauthResolver = new OAuthResolver({ oauthRepo })
+  const mcpRegistry = new McpRegistry({
+    pool,
+    repo: mcpServersRepo,
+    oauthResolver,
+  })
+
   // Bot router with runBetsy agent runner
   const runBetsyDeps = {
     wsRepo,
@@ -127,6 +145,9 @@ export async function startMultiServer(): Promise<void> {
     ) => {
       return runWithGeminiTools(getGemini(), agent, userMessage, history ?? [])
     },
+    mcpRegistry,
+    oauthRepo,
+    mcpServersRepo,
   }
 
   const router = new BotRouter({
@@ -169,8 +190,14 @@ export async function startMultiServer(): Promise<void> {
     intervalMs: env.BC_REMINDERS_POLL_INTERVAL_MS,
   })
 
-  // Healthz
-  const healthzServer = startHealthzServer(env.BC_HEALTHZ_PORT, pool)
+  // Healthz (+ WAVE3C oauth relay callback mounted on the same port)
+  const relayHandler = createRelayCallbackHandler({
+    oauthRepo,
+    mcpServersRepo,
+  })
+  const healthzServer = startHealthzServer(env.BC_HEALTHZ_PORT, pool, [
+    { method: 'POST', path: '/oauth/token', handler: relayHandler },
+  ])
   logger.info('healthz server listening', { port: env.BC_HEALTHZ_PORT })
 
   // Graceful shutdown — wait up to 5 min for in-flight tool work (selfie

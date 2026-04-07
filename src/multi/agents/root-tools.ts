@@ -34,6 +34,8 @@ import { createRecallTools } from './tools/recall-tools.js'
 import { createSkillTools } from '../skills/skill-tool.js'
 import { createLearnerTools } from '../learner/learner-tools.js'
 import type { CandidatesRepo } from '../learner/candidates-repo.js'
+// WAVE3C-MERGE: oauth integration tools
+import { createOAuthTools, type OAuthToolsDeps } from '../oauth/oauth-tools.js'
 import {
   buildDefaultRegistry,
   createAllDelegationTools,
@@ -69,6 +71,10 @@ export interface BuildRootToolsOptions {
   mcpLoaded: LoadedRegistry | null
   /** Optional traceId for log correlation in delegation. */
   traceId?: string
+  // WAVE3C-MERGE: when present, root gets list/connect/disconnect/status
+  //               integration tools. Leaf tool set is untouched (sub-agents
+  //               don't see these). Absent = zero behaviour change.
+  oauthToolsDeps?: OAuthToolsDeps
 }
 
 export interface RootToolBundle {
@@ -188,11 +194,17 @@ export function buildRootTools(
       })
     : []
 
+  // WAVE3C-MERGE: oauth integration tools (root-only, opt-in).
+  const oauthTools: MemoryTool[] = options.oauthToolsDeps
+    ? createOAuthTools(options.oauthToolsDeps)
+    : []
+
   const allRootTools: MemoryTool[] = [
     ...leafTools,
     ...delegationTools,
     ...skillTools,
     ...learnerTools,
+    ...oauthTools,
   ]
 
   return { leafTools, delegationTools, skillTools, allRootTools }

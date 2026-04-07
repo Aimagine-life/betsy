@@ -15,6 +15,8 @@ import { bridgeMcpTool } from './tool-bridge.js'
 import type { McpServerConfig } from './types.js'
 import type { MemoryTool } from '../tools/memory-tools.js'
 import { log } from '../../observability/logger.js'
+import type { OAuthResolver } from './oauth-resolver.js'
+import { getBuiltinMcpServer } from './builtin.js'
 
 export interface McpRegistryDeps {
   pool: Pool
@@ -22,6 +24,10 @@ export interface McpRegistryDeps {
   repo?: McpServersRepo
   /** Override client constructor (for tests). */
   clientFactory?: (cfg: McpServerConfig) => McpClient
+  /** Wave 3c — optional resolver that injects OAuth env vars for builtin
+   *  servers whose name matches a BUILTIN_MCP_SERVERS.id with an oauth spec.
+   *  When absent, the registry keeps its pre-3c behaviour (env from DB only). */
+  oauthResolver?: OAuthResolver
 }
 
 export interface LoadedRegistry {
@@ -37,10 +43,12 @@ export interface LoadedRegistry {
 export class McpRegistry {
   private readonly repo: McpServersRepo
   private readonly clientFactory: (cfg: McpServerConfig) => McpClient
+  private readonly oauthResolver?: OAuthResolver
 
   constructor(deps: McpRegistryDeps) {
     this.repo = deps.repo ?? new McpServersRepo(deps.pool)
     this.clientFactory = deps.clientFactory ?? ((cfg) => new McpClient(cfg))
+    this.oauthResolver = deps.oauthResolver
   }
 
   /**
@@ -62,7 +70,33 @@ export class McpRegistry {
     const clients: McpClient[] = []
     const tools: MemoryTool[] = []
 
-    for (const cfg of configs) {
+    for (const rawCfg of configs) {
+      // Wave 3c: if a builtin with an oauth spec matches by name, ask the
+      // resolver for env vars and merge them over the DB env. If the resolver
+      // reports no_token / crypto_error / etc, skip the server gracefully.
+      let cfg: McpServerConfig = rawCfg
+      if (this.oauthResolver) {
+        const builtin = getBuiltinMcpServer(rawCfg.name)
+        if (builtin?.oauth) {
+          const res = await this.oauthResolver.resolve({
+            workspaceId,
+            oauth: builtin.oauth,
+          })
+          if (!res.ok) {
+            log().warn('mcp: oauth env unavailable, skipping server', {
+              workspaceId,
+              server: rawCfg.name,
+              reason: res.reason,
+            })
+            continue
+          }
+          cfg = {
+            ...rawCfg,
+            env: { ...(rawCfg.env ?? {}), ...res.env },
+          }
+        }
+      }
+
       const client = this.clientFactory(cfg)
       clients.push(client)
       try {
