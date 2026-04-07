@@ -2,7 +2,7 @@ import { defineConfig } from "tsup";
 import { cpSync, mkdirSync, existsSync } from "node:fs";
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  entry: ["src/index.ts", "src/multi/sim/dialogue-sim.ts"],
   format: ["esm"],
   target: "node20",
   outDir: "dist",
