@@ -52,6 +52,29 @@ export class RemindersRepo {
     })
   }
 
+  async listDuePending(limit: number): Promise<Reminder[]> {
+    // Admin view for worker polling across all workspaces
+    const client = await this.pool.connect()
+    try {
+      await client.query('begin')
+      await client.query('set local row_security = off')
+      const { rows } = await client.query(
+        `select * from bc_reminders
+         where status = 'pending' and fire_at <= now()
+         order by fire_at asc
+         limit $1`,
+        [limit],
+      )
+      await client.query('commit')
+      return rows.map(rowToReminder)
+    } catch (e) {
+      await client.query('rollback').catch(() => {})
+      throw e
+    } finally {
+      client.release()
+    }
+  }
+
   async markFired(workspaceId: string, id: string): Promise<void> {
     await withWorkspace(this.pool, workspaceId, async (client) => {
       await client.query(
