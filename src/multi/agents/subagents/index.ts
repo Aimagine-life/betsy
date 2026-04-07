@@ -12,6 +12,13 @@ export { createMemoryAgent } from './memory-agent.js'
 export { createResearchAgent } from './research-agent.js'
 export { createPlannerAgent } from './planner-agent.js'
 export { createCreativeAgent } from './creative-agent.js'
+export {
+  createDelegationTool,
+  createAllDelegationTools,
+  MAX_DELEGATION_DEPTH,
+  type DelegationContext,
+  type DelegationRunner,
+} from './bridge.js'
 
 const MEMORY_NAMES = new Set([
   'remember',
