@@ -13,6 +13,9 @@ import { createWebSearchTool } from './tools/web-search-tool.js'
 import { createBetsyAgent } from './betsy-factory.js'
 import { createRunContext } from './run-context.js'
 import { createRecallTools } from './tools/recall-tools.js'
+import { createSkillTools } from '../skills/skill-tool.js'
+import type { SkillManager } from '../skills/manager.js'
+import type { SkillLLM } from '../skills/executor.js'
 import { speak as realSpeak } from '../gemini/tts.js'
 import { runWithGeminiToolsStream } from './gemini-runner.js'
 import { log } from '../observability/logger.js'
@@ -147,6 +150,9 @@ export interface RunBetsyDeps {
    *  agent. Failures are non-fatal — the agent runs without MCP if loading
    *  fails. Leave undefined in tests / setups without Postgres MCP wiring. */
   mcpRegistry?: McpRegistry
+  /** Wave 1C — workspace skills. Optional: when provided, run_skill / list_skills
+   *  are exposed to the agent and can execute per-workspace YAML skills. */
+  skillManager?: SkillManager
 }
 
 /**
@@ -227,6 +233,35 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
     gemini: deps.gemini,
     workspaceId,
   })
+  // Wave 1C — skills: append run_skill / list_skills if a SkillManager is wired in.
+  // WAVE1C-MERGE: parallel waves (1A subagents, 1B MCP) may also append tools here;
+  // keep additions sequential and conflict-free.
+  if (deps.skillManager) {
+    const skillLlm: SkillLLM = {
+      async generateText(prompt: string): Promise<string> {
+        const resp: any = await deps.gemini.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        })
+        return (
+          (resp as any).text ??
+          (resp as any).candidates?.[0]?.content?.parts?.[0]?.text ??
+          ''
+        )
+      },
+    }
+    const skillTools = createSkillTools({
+      workspaceId,
+      manager: deps.skillManager,
+      llm: skillLlm,
+      logger: log(),
+      // Avoid the obvious recursion: a skill cannot call run_skill / list_skills.
+      getRunnableTools: () => memoryTools.filter(
+        (t) => t.name !== 'run_skill' && t.name !== 'list_skills',
+      ),
+    })
+    memoryTools.push(...skillTools)
+  }
   const reminderTools = createReminderTools({
     remindersRepo: deps.remindersRepo,
     workspaceId,
@@ -410,6 +445,35 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
     gemini: deps.gemini,
     workspaceId,
   })
+  // Wave 1C — skills: append run_skill / list_skills if a SkillManager is wired in.
+  // WAVE1C-MERGE: parallel waves (1A subagents, 1B MCP) may also append tools here;
+  // keep additions sequential and conflict-free.
+  if (deps.skillManager) {
+    const skillLlm: SkillLLM = {
+      async generateText(prompt: string): Promise<string> {
+        const resp: any = await deps.gemini.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        })
+        return (
+          (resp as any).text ??
+          (resp as any).candidates?.[0]?.content?.parts?.[0]?.text ??
+          ''
+        )
+      },
+    }
+    const skillTools = createSkillTools({
+      workspaceId,
+      manager: deps.skillManager,
+      llm: skillLlm,
+      logger: log(),
+      // Avoid the obvious recursion: a skill cannot call run_skill / list_skills.
+      getRunnableTools: () => memoryTools.filter(
+        (t) => t.name !== 'run_skill' && t.name !== 'list_skills',
+      ),
+    })
+    memoryTools.push(...skillTools)
+  }
   const reminderTools = createReminderTools({
     remindersRepo: deps.remindersRepo,
     workspaceId,
