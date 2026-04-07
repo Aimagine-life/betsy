@@ -25,10 +25,13 @@ export interface RunBetsyDeps {
   /**
    * Function that actually runs the ADK agent and returns text.
    * Injected for testability; production wires it to ADK's agent.run().
+   * `history` is the prior conversation (oldest first), so the runner can
+   * include it in the model's context window.
    */
   agentRunner: (
     agent: any,
     userMessage: string,
+    history?: Array<{ role: 'user' | 'assistant' | 'tool'; content: string }>,
   ) => Promise<{
     text: string
     toolCalls: unknown[]
@@ -114,7 +117,7 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
 
   let result: { text: string; toolCalls: unknown[]; tokensUsed: number }
   try {
-    result = await deps.agentRunner(agent, userMessage)
+    result = await deps.agentRunner(agent, userMessage, context.history)
     log().info('runBetsy: agent done', {
       workspaceId,
       textLen: result.text?.length ?? 0,
@@ -253,6 +256,7 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
     deps.gemini,
     agent,
     userMessage,
+    context.history,
   )
 
   // Wrap raw stream so the consumer can iterate exactly once and we still get

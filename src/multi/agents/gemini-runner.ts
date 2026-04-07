@@ -45,6 +45,7 @@ export async function runWithGeminiTools(
   gemini: GoogleGenAI,
   agent: any,
   userMessage: string,
+  history: Array<{ role: 'user' | 'assistant' | 'tool'; content: string }> = [],
 ): Promise<GeminiRunResult> {
   const instruction: string = (agent as any).instruction ?? ''
   const rawModel = (agent as any).model
@@ -60,7 +61,14 @@ export async function runWithGeminiTools(
   const functionDeclarations = tools.map(toFunctionDeclaration)
   const geminiTools = functionDeclarations.length ? [{ functionDeclarations }] : undefined
 
-  const contents: any[] = [{ role: 'user', parts: [{ text: userMessage }] }]
+  // Prepend prior conversation as Gemini contents (assistant → "model").
+  const contents: any[] = []
+  for (const t of history) {
+    if (!t.content || t.content.length === 0) continue
+    if (t.role === 'user') contents.push({ role: 'user', parts: [{ text: t.content }] })
+    else if (t.role === 'assistant') contents.push({ role: 'model', parts: [{ text: t.content }] })
+  }
+  contents.push({ role: 'user', parts: [{ text: userMessage }] })
   const toolCalls: GeminiRunResult['toolCalls'] = []
   let totalTokens = 0
   let finalText = ''
@@ -147,10 +155,16 @@ export interface StreamingRunResult {
  * of (or alongside) text, those tools are executed and a new generation stream
  * is started until either no more functionCalls arrive or MAX_TURNS is hit.
  */
+export interface ConversationTurn {
+  role: 'user' | 'assistant' | 'tool'
+  content: string
+}
+
 export async function runWithGeminiToolsStream(
   gemini: GoogleGenAI,
   agent: any,
   userMessage: string,
+  history: ConversationTurn[] = [],
 ): Promise<StreamingRunResult> {
   const instruction: string = (agent as any).instruction ?? ''
   const rawModel = (agent as any).model
@@ -166,7 +180,20 @@ export async function runWithGeminiToolsStream(
   const functionDeclarations = tools.map(toFunctionDeclaration)
   const geminiTools = functionDeclarations.length ? [{ functionDeclarations }] : undefined
 
-  const contents: any[] = [{ role: 'user', parts: [{ text: userMessage }] }]
+  // Build contents from prior conversation turns + the new user message.
+  // Gemini expects roles "user" and "model"; we map "assistant" → "model"
+  // and skip "tool" turns (tool responses are handled inside the tool loop).
+  const contents: any[] = []
+  for (const t of history) {
+    if (!t.content || t.content.length === 0) continue
+    if (t.role === 'user') {
+      contents.push({ role: 'user', parts: [{ text: t.content }] })
+    } else if (t.role === 'assistant') {
+      contents.push({ role: 'model', parts: [{ text: t.content }] })
+    }
+    // skip tool — those responses live in past tool-loop state, not user-visible context
+  }
+  contents.push({ role: 'user', parts: [{ text: userMessage }] })
   const collectedToolCalls: GeminiRunResult['toolCalls'] = []
   let totalTokens = 0
   let finalText = ''
