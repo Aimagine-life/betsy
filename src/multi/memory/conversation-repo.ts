@@ -127,9 +127,29 @@ export class ConversationRepo {
     })
   }
 
-  async purgeAll(workspaceId: string): Promise<void> {
-    await withWorkspace(this.pool, workspaceId, async (client) => {
-      await client.query(`delete from bc_conversation`)
+  /**
+   * Delete the N most recent messages (regardless of role).
+   * Returns the number actually deleted.
+   */
+  async deleteRecent(workspaceId: string, count: number): Promise<number> {
+    return withWorkspace(this.pool, workspaceId, async (client) => {
+      const result = await client.query(
+        `delete from bc_conversation
+         where id in (
+           select id from bc_conversation
+           order by created_at desc
+           limit $1
+         )`,
+        [count],
+      )
+      return result.rowCount ?? 0
+    })
+  }
+
+  async purgeAll(workspaceId: string): Promise<number> {
+    return withWorkspace(this.pool, workspaceId, async (client) => {
+      const result = await client.query(`delete from bc_conversation`)
+      return result.rowCount ?? 0
     })
   }
 }

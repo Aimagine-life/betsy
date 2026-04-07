@@ -99,6 +99,7 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
 
   const memoryTools = createMemoryTools({
     factsRepo: deps.factsRepo,
+    convRepo: deps.convRepo,
     workspaceId,
   })
   const reminderTools = createReminderTools({
@@ -236,7 +237,11 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
     historyLimit: Number(process.env.BC_HISTORY_LIMIT ?? 200),
   })
 
-  const memoryTools = createMemoryTools({ factsRepo: deps.factsRepo, workspaceId })
+  const memoryTools = createMemoryTools({
+    factsRepo: deps.factsRepo,
+    convRepo: deps.convRepo,
+    workspaceId,
+  })
   const reminderTools = createReminderTools({
     remindersRepo: deps.remindersRepo,
     workspaceId,

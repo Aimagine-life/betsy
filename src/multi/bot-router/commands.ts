@@ -1,11 +1,13 @@
 import type { Workspace, NotifyPref } from '../workspaces/types.js'
 import type { WorkspaceRepo } from '../workspaces/repo.js'
 import type { FactsRepo } from '../memory/facts-repo.js'
+import type { ConversationRepo } from '../memory/conversation-repo.js'
 import type { LinkingService } from '../linking/service.js'
 
 export interface CommandDeps {
   wsRepo: WorkspaceRepo
   factsRepo: FactsRepo
+  convRepo?: ConversationRepo
   linkingSvc: LinkingService
 }
 
@@ -115,12 +117,18 @@ export async function handleCommand(
   if (cmd === '/forget') {
     if (args[0]?.toLowerCase() !== 'confirm') {
       return fmt(
-        `⚠️ Это удалит всё что я о тебе помню, навсегда.\n\n` +
+        `⚠️ Это удалит ВСЁ — факты, долгосрочное саммари и всю историю наших разговоров. Безвозвратно.\n\n` +
           `Если уверен — напиши: /forget confirm`,
       )
     }
     await deps.factsRepo.forgetAll(workspace.id)
-    return fmt(`✅ Я забыл всё о тебе. Начнём заново?`)
+    let convDeleted = 0
+    if (deps.convRepo) {
+      convDeleted = await deps.convRepo.purgeAll(workspace.id)
+    }
+    return fmt(
+      `✅ Я забыла всё о тебе. Удалено ${convDeleted} сообщений из истории. Начнём заново?`,
+    )
   }
 
   if (cmd === '/cancel') {

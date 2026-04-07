@@ -129,6 +129,7 @@ export async function startMultiServer(): Promise<void> {
     wsRepo,
     personaRepo,
     factsRepo,
+    convRepo,
     linkingSvc,
     channels,
     runBetsyFn: runBetsy,

@@ -2,6 +2,7 @@ import type { InboundEvent, ChannelAdapter, ChannelName } from '../channels/base
 import type { WorkspaceRepo } from '../workspaces/repo.js'
 import type { PersonaRepo } from '../personas/repo.js'
 import type { FactsRepo } from '../memory/facts-repo.js'
+import type { ConversationRepo } from '../memory/conversation-repo.js'
 import type { LinkingService } from '../linking/service.js'
 import type {
   runBetsy as runBetsyType,
@@ -20,6 +21,7 @@ export interface BotRouterDeps {
   wsRepo: WorkspaceRepo
   personaRepo: PersonaRepo
   factsRepo: FactsRepo
+  convRepo?: ConversationRepo
   linkingSvc: LinkingService
   channels: Partial<Record<ChannelName, ChannelAdapter>>
   runBetsyFn: typeof runBetsyType
@@ -120,6 +122,7 @@ export class BotRouter {
         const result = await handleCommand(ev.text, workspace as any, {
           wsRepo: this.deps.wsRepo,
           factsRepo: this.deps.factsRepo,
+          convRepo: this.deps.convRepo,
           linkingSvc: this.deps.linkingSvc,
         })
         if (result) {

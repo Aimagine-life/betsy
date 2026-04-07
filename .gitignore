@@ -13,3 +13,8 @@ data/
 betsy-*.json
 gcp-sa*.json
 *service-account*.json
+
+# Local helpers and temp brainstorm sessions — never commit
+.superpowers/
+scripts/__pycache__/
+scripts/deploy_*.py
