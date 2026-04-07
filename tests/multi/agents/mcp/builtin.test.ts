@@ -5,8 +5,8 @@ import {
 } from '../../../../src/multi/agents/mcp/builtin.js'
 
 describe('BUILTIN_MCP_SERVERS catalog', () => {
-  it('contains exactly 6 entries', () => {
-    expect(BUILTIN_MCP_SERVERS).toHaveLength(6)
+  it('contains exactly 8 entries', () => {
+    expect(BUILTIN_MCP_SERVERS).toHaveLength(8)
   })
 
   it('getBuiltinMcpServer("gcal") returns the gcal entry', () => {
@@ -30,5 +30,26 @@ describe('BUILTIN_MCP_SERVERS catalog', () => {
   it('all entries have unique ids', () => {
     const ids = BUILTIN_MCP_SERVERS.map((s) => s.id)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('all ids match [a-z0-9_-]+', () => {
+    for (const s of BUILTIN_MCP_SERVERS) {
+      expect(s.id).toMatch(/^[a-z0-9_-]+$/)
+    }
+  })
+
+  it('stdio entries define a command', () => {
+    for (const s of BUILTIN_MCP_SERVERS) {
+      if (s.transport === 'stdio') {
+        expect(s.command, `entry ${s.id} missing command`).toBeDefined()
+        expect(typeof s.command).toBe('string')
+      }
+    }
+  })
+
+  it('legacy core ids are preserved', () => {
+    for (const id of ['gcal', 'gmail', 'gdrive', 'notion', 'playwright', 'fs']) {
+      expect(getBuiltinMcpServer(id), `missing legacy id ${id}`).toBeDefined()
+    }
   })
 })
