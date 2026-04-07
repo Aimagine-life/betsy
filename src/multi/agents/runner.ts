@@ -18,6 +18,8 @@ import { Summarizer } from '../memory/summarizer.js'
 import { FactExtractor } from '../memory/fact-extractor.js'
 import { embedText } from '../memory/embeddings.js'
 import type { McpRegistry, LoadedRegistry } from './mcp/registry.js'
+import type { OAuthRepo } from '../oauth/repo.js'
+import type { McpServersRepo } from './mcp/repo.js'
 // WAVE2-MERGE: critic wiring for Wave 2B (feature-flagged via BC_CRITIC_ENABLED).
 import type { Critic } from '../critic/critic.js'
 import { shouldApplySuggestion } from '../critic/critic.js'
@@ -158,6 +160,11 @@ export interface RunBetsyDeps {
    *  (non-stream path) when BC_CRITIC_ENABLED=1 is set. Stream path skips the
    *  critic. Fail-open: critic errors never block a reply. */
   critic?: Critic
+  /** Wave 3c — OAuth token repo. When provided together with mcpServersRepo,
+   *  the root agent gets list/connect/disconnect/status integration tools. */
+  oauthRepo?: OAuthRepo
+  /** Wave 3c — MCP servers repo (same instance used by mcpRegistry). */
+  mcpServersRepo?: McpServersRepo
 }
 
 /**
@@ -245,6 +252,14 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
     currentChatId: input.currentChatId,
     runContext,
     mcpLoaded,
+    oauthToolsDeps:
+      deps.oauthRepo
+        ? {
+            workspaceId,
+            oauthRepo: deps.oauthRepo,
+            mcpServersRepo: deps.mcpServersRepo,
+          }
+        : undefined,
   })
 
   const agent = createBetsyAgent({
@@ -463,6 +478,14 @@ export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStre
     currentChatId: input.currentChatId,
     runContext,
     mcpLoaded,
+    oauthToolsDeps:
+      deps.oauthRepo
+        ? {
+            workspaceId,
+            oauthRepo: deps.oauthRepo,
+            mcpServersRepo: deps.mcpServersRepo,
+          }
+        : undefined,
   })
 
   const agent = createBetsyAgent({
