@@ -19,6 +19,10 @@ export interface OutboundMessage {
   audio?: { base64: string; mimeType: string }
   image?: { url: string } | { base64: string; mimeType: string }
   replyToMessageId?: string
+  /** Optional feedback ref id — when set AND the channel adapter has feedback
+   *  enabled, the channel attaches a [👍][👎] inline keyboard whose
+   *  callback_data embeds this refId. Wave 2C. */
+  feedbackRefId?: string
 }
 
 export interface SendResult {
@@ -38,6 +42,8 @@ export interface StreamableOutbound {
    *  the final outgoing message should quote as a reply. Used by recall_messages
    *  + set_reply_target flow. Returning undefined = no reply-quote. */
   replyToPromise?: Promise<number | undefined>
+  /** See OutboundMessage.feedbackRefId. Wave 2C. */
+  feedbackRefId?: string
 }
 
 export interface ChannelAdapter {

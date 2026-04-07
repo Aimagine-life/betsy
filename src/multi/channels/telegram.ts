@@ -1,6 +1,23 @@
-import { Bot, type Context, InputFile } from 'grammy'
+import { Bot, type Context, InputFile, InlineKeyboard } from 'grammy'
 import type { InboundEvent, OutboundMessage, ChannelAdapter, StreamableOutbound } from './base.js'
 import { markdownToTelegramHTML } from './markdown-to-html.js'
+import { getFeedbackRefStore } from '../feedback/ref-store.js'
+import type { FeedbackService } from '../feedback/service.js'
+
+/** Wave 2C: Build an inline [👍][👎] keyboard whose buttons encode `refId`
+ *  in their callback_data. The refId must be short (we use 12 hex chars,
+ *  18 bytes total with the "fb:up:" prefix) because Telegram limits
+ *  callback_data to 64 bytes. */
+export function buildFeedbackKeyboard(refId: string): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('👍', `fb:up:${refId}`)
+    .text('👎', `fb:down:${refId}`)
+}
+
+/** Feature flag — only attach feedback keyboards when explicitly enabled. */
+export function feedbackEnabled(): boolean {
+  return process.env.BC_FEEDBACK_ENABLED === '1'
+}
 
 /** Send text with parse_mode=HTML; on Telegram 400 fall back to plain text.
  *  Returns the outgoing message_id (undefined if capture failed). */
@@ -55,9 +72,17 @@ export class TelegramAdapter implements ChannelAdapter {
   readonly name = 'telegram' as const
   private bot: Bot
   private handler?: (ev: InboundEvent) => Promise<void>
+  /** Wave 2C: optional service used by the fb:up/down callback handler. */
+  private feedbackService?: FeedbackService
 
   constructor(token: string) {
     this.bot = new Bot(token)
+  }
+
+  /** Wave 2C: inject the feedback service (optional). Without it the callback
+   *  handler still answers the query but cannot persist. */
+  setFeedbackService(svc: FeedbackService): void {
+    this.feedbackService = svc
   }
 
   async start(): Promise<void> {
@@ -71,6 +96,14 @@ export class TelegramAdapter implements ChannelAdapter {
         console.error('[telegram] handler failed:', e)
       }
     })
+
+    // Wave 2C: feedback callback handler. Active regardless of feedbackEnabled,
+    // because old messages from a previous enabled-run might still have live
+    // keyboards. Parses refId → looks up in refStore → submits feedback.
+    this.bot.callbackQuery(/^fb:(up|down):([a-f0-9]{6,32})$/, async (ctx) => {
+      await handleFeedbackCallback(ctx, this.feedbackService)
+    })
+
     // Fire-and-forget bot start; long polling runs in background
     void this.bot.start()
   }
@@ -91,11 +124,18 @@ export class TelegramAdapter implements ChannelAdapter {
           }
         : {}
 
+    // Wave 2C: attach feedback keyboard when enabled + refId provided.
+    const fbMarkup =
+      msg.feedbackRefId && feedbackEnabled()
+        ? { reply_markup: buildFeedbackKeyboard(msg.feedbackRefId) }
+        : {}
+
     // If image present — send as photo with caption
     if (msg.image) {
       const captionHtml = msg.text ? markdownToTelegramHTML(msg.text) : undefined
       const opts: any = {
         ...replyParams,
+        ...fbMarkup,
         ...(captionHtml ? { caption: captionHtml, parse_mode: 'HTML' as const } : {}),
       }
       try {
@@ -105,6 +145,11 @@ export class TelegramAdapter implements ChannelAdapter {
         } else {
           const buf = Buffer.from(msg.image.base64, 'base64')
           out = await this.bot.api.sendPhoto(chatId, new InputFile(buf, 'image.png'), opts)
+        }
+        if (msg.feedbackRefId && out?.message_id != null) {
+          getFeedbackRefStore().update(msg.feedbackRefId, {
+            messageId: String(out.message_id),
+          })
         }
         return { externalMessageId: out?.message_id }
       } catch (e: any) {
@@ -118,6 +163,11 @@ export class TelegramAdapter implements ChannelAdapter {
             const buf = Buffer.from(msg.image.base64, 'base64')
             out = await this.bot.api.sendPhoto(chatId, new InputFile(buf, 'image.png'), retryOpts)
           }
+          if (msg.feedbackRefId && out?.message_id != null) {
+            getFeedbackRefStore().update(msg.feedbackRefId, {
+              messageId: String(out.message_id),
+            })
+          }
           return { externalMessageId: out?.message_id }
         }
         throw e
@@ -127,7 +177,15 @@ export class TelegramAdapter implements ChannelAdapter {
     // Text always
     let textOutId: number | undefined
     if (msg.text && msg.text.length > 0) {
-      textOutId = await sendHtmlOrPlainReturningId(this.bot, chatId, msg.text, replyParams)
+      textOutId = await sendHtmlOrPlainReturningId(this.bot, chatId, msg.text, {
+        ...replyParams,
+        ...fbMarkup,
+      })
+      if (msg.feedbackRefId && textOutId != null) {
+        getFeedbackRefStore().update(msg.feedbackRefId, {
+          messageId: String(textOutId),
+        })
+      }
     }
 
     // Audio as voice message (no reply quote attached — voice is a secondary artifact)
@@ -242,7 +300,94 @@ export class TelegramAdapter implements ChannelAdapter {
             },
           }
         : {}
-    const outId = await sendHtmlOrPlainReturningId(this.bot, chatIdNum, finalText, replyParams)
+    // Wave 2C: attach feedback keyboard on the finalized streamed message.
+    const fbMarkup =
+      msg.feedbackRefId && feedbackEnabled()
+        ? { reply_markup: buildFeedbackKeyboard(msg.feedbackRefId) }
+        : {}
+    const outId = await sendHtmlOrPlainReturningId(this.bot, chatIdNum, finalText, {
+      ...replyParams,
+      ...fbMarkup,
+    })
+    if (msg.feedbackRefId && outId != null) {
+      getFeedbackRefStore().update(msg.feedbackRefId, {
+        messageId: String(outId),
+      })
+    }
     return { externalMessageId: outId }
   }
+}
+
+/** Wave 2C: handle a click on a [👍]/[👎] inline button.
+ *
+ *  Exported as a plain function (not a method) so tests can call it directly
+ *  with a mocked Context + mocked FeedbackService without spinning up a Bot. */
+export async function handleFeedbackCallback(
+  ctx: Context,
+  feedbackService: FeedbackService | undefined,
+): Promise<void> {
+  const data = (ctx.callbackQuery as any)?.data as string | undefined
+  const match = data ? /^fb:(up|down):([a-f0-9]{6,32})$/.exec(data) : null
+  if (!match) {
+    try {
+      await ctx.answerCallbackQuery({ text: 'Неизвестная команда' })
+    } catch {}
+    return
+  }
+  const rating: 1 | -1 = match[1] === 'up' ? 1 : -1
+  const refId = match[2]
+  const refData = getFeedbackRefStore().get(refId)
+
+  if (!refData) {
+    try {
+      await ctx.answerCallbackQuery({ text: 'Эта оценка устарела' })
+    } catch {}
+    return
+  }
+
+  // Prefer the refStore-backfilled messageId (matches the actual outgoing
+  // message). Fall back to the message that the keyboard is attached to.
+  const messageId =
+    refData.messageId ??
+    (ctx.callbackQuery?.message?.message_id != null
+      ? String(ctx.callbackQuery.message.message_id)
+      : undefined)
+
+  if (!messageId) {
+    try {
+      await ctx.answerCallbackQuery({ text: 'Не удалось сохранить оценку' })
+    } catch {}
+    return
+  }
+
+  if (feedbackService) {
+    try {
+      await feedbackService.submit({
+        workspaceId: refData.workspaceId,
+        conversationId: refData.conversationId,
+        channel: refData.channel,
+        chatId: refData.chatId,
+        messageId,
+        rating,
+        rawText: refData.rawText,
+        userMessage: refData.userMessage,
+      })
+    } catch (e) {
+      console.error('[telegram] feedback submit failed:', e)
+    }
+  }
+
+  // One-shot — drop the ref so stale entries don't accumulate.
+  getFeedbackRefStore().delete(refId)
+
+  try {
+    await ctx.answerCallbackQuery({
+      text: rating === 1 ? 'Спасибо за 👍' : 'Спасибо, учту 👎',
+    })
+  } catch {}
+
+  // Best-effort: strip the keyboard so the buttons can't be reclicked.
+  try {
+    await ctx.editMessageReplyMarkup({ reply_markup: undefined })
+  } catch {}
 }
