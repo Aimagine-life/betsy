@@ -1,13 +1,27 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import Database from 'better-sqlite3'
 import {
   extractSqliteKnowledge,
   extractSqliteUserFacts,
   extractSqliteConversations,
 } from '../../../src/multi/migration/sqlite-to-pg.js'
 
-describe('sqlite-to-pg extractors', () => {
-  let sqlite: Database.Database
+// better-sqlite3 needs a native build; some hosts (Windows without VS toolchain)
+// can't compile it. The migration code itself is fine on Linux/CI/prod, so we
+// skip this whole suite when the binding can't load — better than 5 noisy fails.
+let Database: any
+let sqliteLoadError: Error | null = null
+try {
+  Database = (await import('better-sqlite3')).default
+  // Probe the binding by opening a throwaway in-memory db.
+  new Database(':memory:').close()
+} catch (e) {
+  sqliteLoadError = e as Error
+}
+
+const describeSqlite = sqliteLoadError ? describe.skip : describe
+
+describeSqlite('sqlite-to-pg extractors', () => {
+  let sqlite: any
 
   beforeEach(() => {
     sqlite = new Database(':memory:')
