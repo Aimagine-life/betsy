@@ -66,8 +66,8 @@ export async function startMultiServer(): Promise<void> {
       project: env.BC_GCP_PROJECT,
       location: env.BC_GCP_LOCATION,
       models: [
-        'gemini-flash-latest',
-        'gemini-pro-latest',
+        'gemini-2.5-flash',
+        'gemini-2.5-pro',
         'gemini-3.1-flash-image-preview',
         'gemini-2.5-flash-preview-tts',
       ],
@@ -76,8 +76,8 @@ export async function startMultiServer(): Promise<void> {
     buildGemini({ apiKey: env.GEMINI_API_KEY! })
     logger.info('gemini client initialized (ai studio)', {
       models: [
-        'gemini-flash-latest',
-        'gemini-pro-latest',
+        'gemini-2.5-flash',
+        'gemini-2.5-pro',
         'gemini-3.1-flash-image-preview',
         'gemini-2.5-flash-preview-tts',
       ],

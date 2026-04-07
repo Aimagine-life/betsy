@@ -51,7 +51,7 @@ export async function runWithGeminiTools(
   const modelName =
     typeof rawModel === 'string'
       ? rawModel
-      : rawModel?.model ?? rawModel?.name ?? rawModel?.modelName ?? 'gemini-flash-latest'
+      : rawModel?.model ?? rawModel?.name ?? rawModel?.modelName ?? 'gemini-2.5-flash'
 
   const tools: MemoryTool[] = ((agent as any).tools ?? []) as MemoryTool[]
   const toolsByName = new Map<string, MemoryTool>()
