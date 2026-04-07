@@ -58,6 +58,44 @@ async function* makeTextStream(chunks: string[]): AsyncIterable<string> {
   }
 }
 
+describe('TelegramAdapter.sendMessage', () => {
+  it('sendMessage forwards replyToMessageId to grammy reply_parameters', async () => {
+    const sendSpy = vi.fn().mockResolvedValue({ message_id: 999 })
+    const adapter = new TelegramAdapter('xxx')
+    ;(adapter as any).bot = {
+      api: { sendMessage: sendSpy },
+    }
+    const result = await adapter.sendMessage({
+      chatId: '100',
+      text: 'hi',
+      replyToMessageId: '42',
+    })
+    expect(sendSpy).toHaveBeenCalledWith(
+      100,
+      expect.any(String),
+      expect.objectContaining({
+        reply_parameters: { message_id: 42, allow_sending_without_reply: true },
+      }),
+    )
+    expect(result.externalMessageId).toBe(999)
+  })
+
+  it('sendMessage returns externalMessageId without reply when no replyToMessageId', async () => {
+    const sendSpy = vi.fn().mockResolvedValue({ message_id: 123 })
+    const adapter = new TelegramAdapter('xxx')
+    ;(adapter as any).bot = {
+      api: { sendMessage: sendSpy },
+    }
+    const result = await adapter.sendMessage({ chatId: '100', text: 'hello' })
+    expect(sendSpy).toHaveBeenCalledWith(
+      100,
+      expect.any(String),
+      expect.not.objectContaining({ reply_parameters: expect.anything() }),
+    )
+    expect(result.externalMessageId).toBe(123)
+  })
+})
+
 describe('TelegramAdapter.streamMessage', () => {
   it('streams via sendMessageDraft and finalizes via sendMessage', async () => {
     const adapter = new TelegramAdapter('fake-token')

@@ -2,26 +2,39 @@ import { Bot, type Context, InputFile } from 'grammy'
 import type { InboundEvent, OutboundMessage, ChannelAdapter, StreamableOutbound } from './base.js'
 import { markdownToTelegramHTML } from './markdown-to-html.js'
 
-/** Send text with parse_mode=HTML; on Telegram 400 fall back to plain text. */
-async function sendHtmlOrPlain(
+/** Send text with parse_mode=HTML; on Telegram 400 fall back to plain text.
+ *  Returns the outgoing message_id (undefined if capture failed). */
+async function sendHtmlOrPlainReturningId(
   bot: Bot,
   chatId: number,
   text: string,
-): Promise<void> {
+  extraOpts: Record<string, unknown> = {},
+): Promise<number | undefined> {
   const html = markdownToTelegramHTML(text)
   try {
-    await bot.api.sendMessage(chatId, html, { parse_mode: 'HTML' })
+    const out = await bot.api.sendMessage(chatId, html, { parse_mode: 'HTML', ...extraOpts })
+    return out?.message_id
   } catch (e: any) {
     if (e?.error_code === 400) {
       try {
-        await bot.api.sendMessage(chatId, text)
+        const out = await bot.api.sendMessage(chatId, text, extraOpts)
+        return out?.message_id
       } catch {
-        /* best-effort */
+        return undefined
       }
     } else {
       throw e
     }
   }
+}
+
+/** Backwards-compatible alias used inside streamMessage's early-throw paths. */
+async function sendHtmlOrPlain(
+  bot: Bot,
+  chatId: number,
+  text: string,
+): Promise<void> {
+  await sendHtmlOrPlainReturningId(bot, chatId, text)
 }
 
 export function buildInboundFromTelegramCtx(ctx: Context): InboundEvent {
@@ -74,48 +87,64 @@ export class TelegramAdapter implements ChannelAdapter {
     await this.bot.stop()
   }
 
-  async sendMessage(msg: OutboundMessage): Promise<void> {
+  async sendMessage(msg: OutboundMessage): Promise<import('./base.js').SendResult> {
     const chatId = Number(msg.chatId)
+    const replyParams =
+      msg.replyToMessageId != null
+        ? {
+            reply_parameters: {
+              message_id: Number(msg.replyToMessageId),
+              allow_sending_without_reply: true,
+            },
+          }
+        : {}
 
     // If image present — send as photo with caption
     if (msg.image) {
       const captionHtml = msg.text ? markdownToTelegramHTML(msg.text) : undefined
-      const opts = captionHtml ? { caption: captionHtml, parse_mode: 'HTML' as const } : {}
+      const opts: any = {
+        ...replyParams,
+        ...(captionHtml ? { caption: captionHtml, parse_mode: 'HTML' as const } : {}),
+      }
       try {
+        let out
         if ('url' in msg.image) {
-          await this.bot.api.sendPhoto(chatId, msg.image.url, opts)
+          out = await this.bot.api.sendPhoto(chatId, msg.image.url, opts)
         } else {
           const buf = Buffer.from(msg.image.base64, 'base64')
-          await this.bot.api.sendPhoto(chatId, new InputFile(buf, 'image.png'), opts)
+          out = await this.bot.api.sendPhoto(chatId, new InputFile(buf, 'image.png'), opts)
         }
+        return { externalMessageId: out?.message_id }
       } catch (e: any) {
         if (e?.error_code === 400 && msg.text) {
           // Retry without parse_mode
+          const retryOpts: any = { ...replyParams, caption: msg.text }
+          let out
           if ('url' in msg.image) {
-            await this.bot.api.sendPhoto(chatId, msg.image.url, { caption: msg.text })
+            out = await this.bot.api.sendPhoto(chatId, msg.image.url, retryOpts)
           } else {
             const buf = Buffer.from(msg.image.base64, 'base64')
-            await this.bot.api.sendPhoto(chatId, new InputFile(buf, 'image.png'), {
-              caption: msg.text,
-            })
+            out = await this.bot.api.sendPhoto(chatId, new InputFile(buf, 'image.png'), retryOpts)
           }
-        } else {
-          throw e
+          return { externalMessageId: out?.message_id }
         }
+        throw e
       }
-      return
     }
 
     // Text always
+    let textOutId: number | undefined
     if (msg.text && msg.text.length > 0) {
-      await sendHtmlOrPlain(this.bot, chatId, msg.text)
+      textOutId = await sendHtmlOrPlainReturningId(this.bot, chatId, msg.text, replyParams)
     }
 
-    // Audio as voice message
+    // Audio as voice message (no reply quote attached — voice is a secondary artifact)
     if (msg.audio) {
       const buf = Buffer.from(msg.audio.base64, 'base64')
       await this.bot.api.sendVoice(chatId, new InputFile(buf, 'voice.ogg'))
     }
+
+    return { externalMessageId: textOutId }
   }
 
   onMessage(handler: (ev: InboundEvent) => Promise<void>): void {
@@ -138,7 +167,7 @@ export class TelegramAdapter implements ChannelAdapter {
    * Falls back gracefully to a single sendMessage if sendMessageDraft is not
    * supported on the current Bot API version (older deployments) or fails.
    */
-  async streamMessage(msg: StreamableOutbound): Promise<void> {
+  async streamMessage(msg: StreamableOutbound): Promise<import('./base.js').SendResult> {
     const chatIdNum = Number(msg.chatId)
     // draft_id must be a non-zero Integer per Bot API spec
     const draftId =
@@ -189,14 +218,39 @@ export class TelegramAdapter implements ChannelAdapter {
     } catch (e) {
       streamFailed = true
       throw e
-    } finally {
-      // Only finalize on natural success. On error we leave the ephemeral
-      // Telegram draft to expire on its own (drafts are not persisted as
-      // real messages), so retries can re-send cleanly without duplicates.
-      if (!streamFailed && lastText && lastText.length > 0) {
-        const finalText = lastText.length > 4096 ? lastText.slice(0, 4096) : lastText
-        await sendHtmlOrPlain(this.bot, chatIdNum, finalText)
+    }
+
+    if (streamFailed || !lastText || lastText.length === 0) {
+      return {}
+    }
+
+    // Stream ended naturally. Check if a recall tool set a reply target; if so,
+    // send the final message as a reply-quote (drafts expire on their own).
+    let replyTo: number | undefined
+    if (msg.replyToPromise) {
+      try {
+        // Short guard timeout — the promise should resolve immediately since
+        // the agent loop has already finished by the time we reach here.
+        replyTo = await Promise.race([
+          msg.replyToPromise,
+          new Promise<undefined>((r) => setTimeout(() => r(undefined), 2000)),
+        ])
+      } catch {
+        replyTo = undefined
       }
     }
+
+    const finalText = lastText.length > 4096 ? lastText.slice(0, 4096) : lastText
+    const replyParams =
+      replyTo != null
+        ? {
+            reply_parameters: {
+              message_id: replyTo,
+              allow_sending_without_reply: true,
+            },
+          }
+        : {}
+    const outId = await sendHtmlOrPlainReturningId(this.bot, chatIdNum, finalText, replyParams)
+    return { externalMessageId: outId }
   }
 }

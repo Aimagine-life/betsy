@@ -1,4 +1,4 @@
-import type { InboundEvent, OutboundMessage, ChannelAdapter, StreamableOutbound } from './base.js'
+import type { InboundEvent, OutboundMessage, ChannelAdapter, StreamableOutbound, SendResult } from './base.js'
 
 const MAX_BASE = 'https://botapi.max.ru'
 type FetchFn = typeof fetch
@@ -88,7 +88,7 @@ export class MaxAdapter implements ChannelAdapter {
     }
   }
 
-  async sendMessage(msg: OutboundMessage): Promise<void> {
+  async sendMessage(msg: OutboundMessage): Promise<SendResult> {
     const url = new URL(`${MAX_BASE}/messages`)
     url.searchParams.set('chat_id', msg.chatId)
     const body: any = { text: msg.text }
@@ -103,6 +103,7 @@ export class MaxAdapter implements ChannelAdapter {
     if (!res.ok) {
       throw new Error(`MAX sendMessage failed: ${res.status}`)
     }
+    return {}
   }
 
   onMessage(handler: (ev: InboundEvent) => Promise<void>): void {
@@ -117,13 +118,14 @@ export class MaxAdapter implements ChannelAdapter {
    * MAX has no native streaming endpoint. Drain the stream, then send a single
    * normal message with the final text.
    */
-  async streamMessage(msg: StreamableOutbound): Promise<void> {
+  async streamMessage(msg: StreamableOutbound): Promise<SendResult> {
     let lastText = ''
     for await (const accumulated of msg.textStream) {
       if (accumulated) lastText = accumulated
     }
     if (lastText) {
-      await this.sendMessage({ chatId: msg.chatId, text: lastText })
+      return this.sendMessage({ chatId: msg.chatId, text: lastText })
     }
+    return {}
   }
 }
