@@ -3,7 +3,11 @@ import type { WorkspaceRepo } from '../workspaces/repo.js'
 import type { PersonaRepo } from '../personas/repo.js'
 import type { FactsRepo } from '../memory/facts-repo.js'
 import type { LinkingService } from '../linking/service.js'
-import type { runBetsy as runBetsyType, RunBetsyDeps } from '../agents/runner.js'
+import type {
+  runBetsy as runBetsyType,
+  runBetsyStream as runBetsyStreamType,
+  RunBetsyDeps,
+} from '../agents/runner.js'
 import {
   nextOnboardingStep,
   parseOnboardingAnswer,
@@ -19,6 +23,9 @@ export interface BotRouterDeps {
   linkingSvc: LinkingService
   channels: Partial<Record<ChannelName, ChannelAdapter>>
   runBetsyFn: typeof runBetsyType
+  /** Optional streaming variant; when present and the channel supports
+   *  streamMessage, used in preference to runBetsyFn for normal messages. */
+  runBetsyStreamFn?: typeof runBetsyStreamType
   runBetsyDeps: RunBetsyDeps
 }
 
@@ -129,35 +136,66 @@ export class BotRouter {
         return
       }
 
-      // Normal message → runBetsy
-      log().info('routing: runBetsy', { workspaceId: workspace.id })
-      const stopTyping = startTypingLoop(channel, ev.chatId)
-      let response
-      try {
-        response = await this.deps.runBetsyFn({
-          workspaceId: workspace.id,
-          userMessage: ev.text,
-          channel: ev.channel,
-          deps: this.deps.runBetsyDeps,
-        })
-      } finally {
-        stopTyping()
-      }
-      log().info('runBetsy returned', {
-        workspaceId: workspace.id,
-        textLen: response.text?.length ?? 0,
-        hasAudio: Boolean(response.audio),
-        toolCalls: Array.isArray(response.toolCalls) ? response.toolCalls.length : 0,
-      })
+      // Normal message → runBetsy. Prefer streaming path when:
+      //  - the channel adapter supports streamMessage,
+      //  - the streaming runner is wired in,
+      //  - the persona is NOT in voice_always mode (voice needs full text up front).
+      const persona = await this.deps.personaRepo.findByWorkspace(workspace.id)
+      const voiceAlways = persona?.behaviorConfig?.voice === 'voice_always'
+      const canStream = Boolean(
+        channel.streamMessage && this.deps.runBetsyStreamFn && !voiceAlways,
+      )
 
-      await channel.sendMessage({
-        chatId: ev.chatId,
-        text: response.text,
-        audio: response.audio && {
-          base64: response.audio.base64,
-          mimeType: response.audio.mimeType,
-        },
-      })
+      if (canStream) {
+        log().info('routing: runBetsyStream', { workspaceId: workspace.id })
+        const stopTyping = startTypingLoop(channel, ev.chatId)
+        try {
+          const { textStream, done } = await this.deps.runBetsyStreamFn!({
+            workspaceId: workspace.id,
+            userMessage: ev.text,
+            channel: ev.channel,
+            deps: this.deps.runBetsyDeps,
+          })
+          await channel.streamMessage!({ chatId: ev.chatId, textStream })
+          const result = await done
+          log().info('runBetsyStream returned', {
+            workspaceId: workspace.id,
+            textLen: result.text?.length ?? 0,
+            toolCalls: Array.isArray(result.toolCalls) ? result.toolCalls.length : 0,
+          })
+        } finally {
+          stopTyping()
+        }
+      } else {
+        log().info('routing: runBetsy', { workspaceId: workspace.id })
+        const stopTyping = startTypingLoop(channel, ev.chatId)
+        let response
+        try {
+          response = await this.deps.runBetsyFn({
+            workspaceId: workspace.id,
+            userMessage: ev.text,
+            channel: ev.channel,
+            deps: this.deps.runBetsyDeps,
+          })
+        } finally {
+          stopTyping()
+        }
+        log().info('runBetsy returned', {
+          workspaceId: workspace.id,
+          textLen: response.text?.length ?? 0,
+          hasAudio: Boolean(response.audio),
+          toolCalls: Array.isArray(response.toolCalls) ? response.toolCalls.length : 0,
+        })
+
+        await channel.sendMessage({
+          chatId: ev.chatId,
+          text: response.text,
+          audio: response.audio && {
+            base64: response.audio.base64,
+            mimeType: response.audio.mimeType,
+          },
+        })
+      }
       log().info('inbound: response sent', { workspaceId: workspace.id })
     } catch (err) {
       log().error('inbound failed', {

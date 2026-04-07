@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest'
-import { buildInboundFromTelegramCtx } from '../../../src/multi/channels/telegram.js'
+import { describe, it, expect, vi } from 'vitest'
+import {
+  buildInboundFromTelegramCtx,
+  TelegramAdapter,
+} from '../../../src/multi/channels/telegram.js'
 
 describe('buildInboundFromTelegramCtx', () => {
   it('maps text message to InboundEvent', () => {
@@ -44,5 +47,67 @@ describe('buildInboundFromTelegramCtx', () => {
       message: { message_id: 10, text: 'hi', date: 0 },
     }
     expect(buildInboundFromTelegramCtx(ctx).userDisplay).toBe('kostya')
+  })
+})
+
+async function* makeTextStream(chunks: string[]): AsyncIterable<string> {
+  for (const c of chunks) {
+    yield c
+    // tiny await so the throttle has a chance to advance
+    await new Promise((r) => setTimeout(r, 250))
+  }
+}
+
+describe('TelegramAdapter.streamMessage', () => {
+  it('streams via sendMessageDraft and finalizes via sendMessage', async () => {
+    const adapter = new TelegramAdapter('fake-token')
+    const sendMessageDraft = vi.fn().mockResolvedValue(true)
+    const sendMessage = vi.fn().mockResolvedValue({})
+    ;(adapter as any).bot = {
+      api: {
+        raw: { sendMessageDraft },
+        sendMessage,
+      },
+    }
+
+    await adapter.streamMessage({
+      chatId: '12345',
+      textStream: makeTextStream(['Hi', 'Hi there', 'Hi there!']),
+    })
+
+    expect(sendMessageDraft).toHaveBeenCalled()
+    const calls = sendMessageDraft.mock.calls
+    // accumulating text — last draft call should match last chunk
+    expect(calls[calls.length - 1][0].text).toBe('Hi there!')
+    expect(calls[calls.length - 1][0].chat_id).toBe(12345)
+    expect(typeof calls[0][0].draft_id).toBe('number')
+    expect(calls[0][0].draft_id).not.toBe(0)
+    // final sendMessage with full text
+    expect(sendMessage).toHaveBeenCalledWith(12345, 'Hi there!')
+  })
+
+  it('falls back to sendMessage when sendMessageDraft is unsupported', async () => {
+    const adapter = new TelegramAdapter('fake-token')
+    const sendMessageDraft = vi.fn().mockRejectedValue({
+      error_code: 404,
+      description: 'method not found',
+    })
+    const sendMessage = vi.fn().mockResolvedValue({})
+    ;(adapter as any).bot = {
+      api: {
+        raw: { sendMessageDraft },
+        sendMessage,
+      },
+    }
+
+    await adapter.streamMessage({
+      chatId: '99',
+      textStream: makeTextStream(['part1', 'part1 part2']),
+    })
+
+    // After first failure, no further draft calls expected
+    expect(sendMessageDraft).toHaveBeenCalledTimes(1)
+    // Final fallback message goes through
+    expect(sendMessage).toHaveBeenCalledWith(99, 'part1 part2')
   })
 })

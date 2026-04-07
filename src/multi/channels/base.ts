@@ -21,6 +21,15 @@ export interface OutboundMessage {
   replyToMessageId?: string
 }
 
+export interface StreamableOutbound {
+  chatId: string
+  /** Async iterable that yields incrementally growing text. Each yield is the
+   *  full accumulated text so far (NOT just the delta). */
+  textStream: AsyncIterable<string>
+  /** Optional explicit final text; if absent the last yielded value is used. */
+  finalText?: string
+}
+
 export interface ChannelAdapter {
   readonly name: ChannelName
   start(): Promise<void>
@@ -28,4 +37,6 @@ export interface ChannelAdapter {
   sendMessage(msg: OutboundMessage): Promise<void>
   onMessage(handler: (ev: InboundEvent) => Promise<void>): void
   sendTyping?(chatId: string): Promise<void>
+  /** Stream a message via native channel streaming API if supported. */
+  streamMessage?(msg: StreamableOutbound): Promise<void>
 }

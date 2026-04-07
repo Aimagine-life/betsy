@@ -11,6 +11,7 @@ import { createReminderTools } from './tools/reminder-tools.js'
 import { createSelfieTool } from './tools/selfie-tool.js'
 import { createBetsyAgent } from './betsy-factory.js'
 import { speak as realSpeak } from '../gemini/tts.js'
+import { runWithGeminiToolsStream } from './gemini-runner.js'
 import { log } from '../observability/logger.js'
 
 export interface RunBetsyDeps {
@@ -167,4 +168,125 @@ export async function runBetsy(input: RunBetsyInput): Promise<BetsyResponse> {
     toolCalls: result.toolCalls,
     tokensUsed: result.tokensUsed,
   }
+}
+
+export interface RunBetsyStreamResult {
+  /** Full-text-so-far accumulating async iterable; consumed by channel adapters
+   *  that support streaming (e.g. Telegram sendMessageDraft). */
+  textStream: AsyncIterable<string>
+  /** Resolves once the assistant message has been fully generated and persisted. */
+  done: Promise<{ text: string; toolCalls: unknown[]; tokensUsed: number }>
+}
+
+/**
+ * Streaming variant of {@link runBetsy}. Loads workspace + persona + context
+ * exactly the same way, persists the user message, then drives Gemini in
+ * streaming mode and exposes a textStream the caller can pipe into a channel
+ * adapter's streamMessage. After the stream completes, the assistant reply is
+ * persisted to the conversation log.
+ *
+ * Note: voice/TTS is intentionally NOT supported by the streaming path — voice
+ * needs the full text up front. Callers that require voice should fall back to
+ * the non-streaming runBetsy.
+ */
+export async function runBetsyStream(input: RunBetsyInput): Promise<RunBetsyStreamResult> {
+  const { workspaceId, userMessage, channel, deps } = input
+
+  const workspace = await deps.wsRepo.findById(workspaceId)
+  if (!workspace) throw new Error(`workspace not found: ${workspaceId}`)
+
+  const persona = await deps.personaRepo.findByWorkspace(workspaceId)
+  if (!persona) throw new Error(`persona not found for workspace: ${workspaceId}`)
+
+  const context = await loadAgentContext({
+    factsRepo: deps.factsRepo,
+    convRepo: deps.convRepo,
+    workspaceId,
+    factLimit: 50,
+    historyLimit: 20,
+  })
+
+  const memoryTools = createMemoryTools({ factsRepo: deps.factsRepo, workspaceId })
+  const reminderTools = createReminderTools({
+    remindersRepo: deps.remindersRepo,
+    workspaceId,
+    currentChannel: channel,
+  })
+  const selfieTool = createSelfieTool({
+    personaRepo: deps.personaRepo,
+    s3: deps.s3,
+    gemini: deps.gemini,
+    workspaceId,
+  })
+
+  const agent = createBetsyAgent({
+    workspace,
+    persona,
+    ownerFacts: context.factContents,
+    tools: { memoryTools, reminderTools, selfieTool },
+    currentChannel: channel,
+  })
+
+  log().info('runBetsyStream: start', { workspaceId, channel, userMsgLen: userMessage.length })
+
+  try {
+    await deps.convRepo.append(workspaceId, {
+      channel,
+      role: 'user',
+      content: userMessage,
+    } as any)
+  } catch (e) {
+    log().error('runBetsyStream: append user failed', {
+      workspaceId,
+      error: e instanceof Error ? e.message : String(e),
+    })
+    throw e
+  }
+
+  const { textStream: rawStream, finalize } = await runWithGeminiToolsStream(
+    deps.gemini,
+    agent,
+    userMessage,
+  )
+
+  // Wrap raw stream so the consumer can iterate exactly once and we still get
+  // a chance to observe completion before resolving `done`.
+  const wrappedStream: AsyncIterable<string> = {
+    async *[Symbol.asyncIterator]() {
+      for await (const text of rawStream) {
+        yield text
+      }
+    },
+  }
+
+  const done = (async () => {
+    const result = await finalize()
+    log().info('runBetsyStream: agent done', {
+      workspaceId,
+      textLen: result.text?.length ?? 0,
+      toolCalls: Array.isArray(result.toolCalls) ? result.toolCalls.length : 0,
+      tokensUsed: result.tokensUsed,
+    })
+    try {
+      await deps.convRepo.append(workspaceId, {
+        channel,
+        role: 'assistant',
+        content: result.text,
+        toolCalls: result.toolCalls,
+        tokensUsed: result.tokensUsed,
+      } as any)
+    } catch (e) {
+      log().error('runBetsyStream: append assistant failed', {
+        workspaceId,
+        error: e instanceof Error ? e.message : String(e),
+      })
+    }
+    return {
+      text: result.text,
+      toolCalls: result.toolCalls,
+      tokensUsed: result.tokensUsed,
+    }
+  })()
+
+  return { textStream: wrappedStream, done }
 }

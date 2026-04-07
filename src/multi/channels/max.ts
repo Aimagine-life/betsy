@@ -1,4 +1,4 @@
-import type { InboundEvent, OutboundMessage, ChannelAdapter } from './base.js'
+import type { InboundEvent, OutboundMessage, ChannelAdapter, StreamableOutbound } from './base.js'
 
 const MAX_BASE = 'https://botapi.max.ru'
 type FetchFn = typeof fetch
@@ -111,5 +111,19 @@ export class MaxAdapter implements ChannelAdapter {
 
   async sendTyping(_chatId: string): Promise<void> {
     // MAX API: not implemented yet, noop
+  }
+
+  /**
+   * MAX has no native streaming endpoint. Drain the stream, then send a single
+   * normal message with the final text.
+   */
+  async streamMessage(msg: StreamableOutbound): Promise<void> {
+    let lastText = ''
+    for await (const accumulated of msg.textStream) {
+      if (accumulated) lastText = accumulated
+    }
+    if (lastText) {
+      await this.sendMessage({ chatId: msg.chatId, text: lastText })
+    }
   }
 }

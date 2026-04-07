@@ -16,7 +16,7 @@ import { ConversationRepo } from './memory/conversation-repo.js'
 import { RemindersRepo } from './reminders/repo.js'
 import { LinkCodesRepo } from './linking/repo.js'
 import { LinkingService } from './linking/service.js'
-import { runBetsy } from './agents/runner.js'
+import { runBetsy, runBetsyStream } from './agents/runner.js'
 import { runWithGeminiTools } from './agents/gemini-runner.js'
 import { startRemindersWorker } from './jobs/reminders-worker.js'
 
@@ -132,6 +132,7 @@ export async function startMultiServer(): Promise<void> {
     linkingSvc,
     channels,
     runBetsyFn: runBetsy,
+    runBetsyStreamFn: runBetsyStream,
     runBetsyDeps,
   })
   router.attach()
