@@ -4,6 +4,7 @@ import { withWorkspace } from '../db/rls.js'
 import type { Conversation } from './types.js'
 import { embedText, toPgVector } from './embeddings.js'
 import { log } from '../observability/logger.js'
+import { buildConversationSearchSQL } from './conversation-search.js'
 
 function rowToConversation(r: any): Conversation {
   return {
@@ -252,6 +253,53 @@ export class ConversationRepo {
         `update bc_conversation set embedding = $1::vector where id = $2`,
         [pgVec, id],
       )
+    })
+  }
+
+  async searchByEmbedding(
+    workspaceId: string,
+    queryVec: number[],
+    opts: {
+      chatId: string
+      limit: number
+      role?: 'user' | 'assistant' | 'any'
+      since?: string
+      until?: string
+      excludeRecentN?: number
+    },
+  ): Promise<Array<Conversation & { distance: number }>> {
+    const { sql, params } = buildConversationSearchSQL({
+      workspaceId,
+      queryVecLiteral: toPgVector(queryVec),
+      chatId: opts.chatId,
+      limit: opts.limit,
+      role: opts.role,
+      since: opts.since,
+      until: opts.until,
+      excludeRecentN: opts.excludeRecentN,
+    })
+    return withWorkspace(this.pool, workspaceId, async (client) => {
+      const { rows } = await client.query(sql, params)
+      return rows.map((r: any) => ({
+        ...rowToConversation(r),
+        distance: parseFloat(r.distance),
+      }))
+    })
+  }
+
+  async listMissingEmbeddings(workspaceId: string, limit: number): Promise<Conversation[]> {
+    return withWorkspace(this.pool, workspaceId, async (client) => {
+      const { rows } = await client.query(
+        `select * from bc_conversation
+         where embedding is null
+           and role in ('user','assistant')
+           and length(content) >= 10
+           and coalesce(meta->>'summarized', 'false') <> 'true'
+         order by created_at asc
+         limit $1`,
+        [limit],
+      )
+      return rows.map(rowToConversation)
     })
   }
 }
